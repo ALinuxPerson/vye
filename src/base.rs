@@ -8,7 +8,6 @@ use std::hash::Hash;
 pub trait Application {
     type RootModel: Model<ForApp = Self>;
     type RegionId: Debug + Eq + Hash;
-    type State;
 }
 
 pub trait ModelMessage: Send + 'static {}
@@ -22,7 +21,7 @@ macro_rules! make_model_getter_message {
     ($(#[$($meta:meta)*])* $vis:vis struct $name:ident; type Data = $data:ty) => {
         $(#[$($meta)*])*
         $vis struct $name;
-        
+
         impl $crate::ModelGetterMessage for $name {
             type Data = $data;
         }

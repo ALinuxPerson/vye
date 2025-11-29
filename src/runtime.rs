@@ -3,7 +3,8 @@ use crate::{Dispatcher, ModelHandler, ModelMessage, ModelWithRegion};
 use futures::channel::mpsc;
 use futures::future::BoxFuture;
 use futures::{SinkExt, StreamExt};
-use std::collections::{HashSet, VecDeque};
+use std::any::{Any, TypeId, type_name};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::mem;
 use std::ops::ControlFlow;
 
@@ -35,7 +36,7 @@ impl<A: Application> DirtyRegions<A> {
     pub fn mark_with(&mut self, region: A::RegionId) {
         self.0.insert(region);
     }
-    
+
     pub fn mark<M: ModelWithRegion<ForApp = A>>(&mut self) {
         self.mark_with(M::REGION)
     }
@@ -68,7 +69,7 @@ impl<'rt, A: Application> UpdateContext<'rt, A> {
 
 pub struct ApplyContext<'rt, A: Application> {
     pub model: &'rt mut A::RootModel,
-    pub state: &'rt mut A::State,
+    pub world: &'rt mut World,
     pub dispatcher: &'rt mut Dispatcher<A::RootModel>,
 }
 
@@ -79,6 +80,14 @@ impl<'rt, A: Application> ApplyContext<'rt, A> {
         A::RootModel: ModelHandler<Msg>,
     {
         self.dispatcher.send(message).await
+    }
+
+    pub fn state<S: Any>(&self) -> &S {
+        self.world.get()
+    }
+
+    pub fn state_mut<S: Any>(&mut self) -> &mut S {
+        self.world.get_mut()
     }
 }
 
@@ -101,7 +110,7 @@ pub(crate) enum Action<M: Model> {
 
 pub struct MvuRuntime<A: Application> {
     model: A::RootModel,
-    state: A::State,
+    world: World,
 
     queue: CommandQueue<A>,
     dirty_regions: DirtyRegions<A>,
@@ -124,7 +133,6 @@ impl<A: Application> MvuRuntime<A> {
     pub fn defaults() -> (Self, ShouldRefreshSubscriber<A>)
     where
         A::RootModel: Default,
-        A::State: Default,
     {
         MvuRuntimeBuilder::defaults().build()
     }
@@ -160,7 +168,7 @@ impl<A: Application> MvuRuntime<A> {
 
         let mut command_ctx = ApplyContext {
             model: &mut self.model,
-            state: &mut self.state,
+            world: &mut self.world,
             dispatcher: &mut self.dispatcher,
         };
         while let Some(mut command) = self.queue.pop() {
@@ -191,9 +199,45 @@ impl<A: Application> MvuRuntime<A> {
     }
 }
 
+#[derive(Default)]
+pub struct World(HashMap<TypeId, Box<dyn Any>>);
+
+impl World {
+    pub(crate) fn add_with<S: Any>(mut self, state: S) -> Self {
+        self.0.insert(state.type_id(), Box::new(state));
+        self
+    }
+
+    pub(crate) fn add<S: Any + Default>(self) -> Self {
+        self.add_with(S::default())
+    }
+
+    pub fn try_get<S: Any>(&self) -> Option<&S> {
+        self.0
+            .get(&TypeId::of::<S>())
+            .and_then(|s| s.downcast_ref())
+    }
+
+    pub fn get<S: Any>(&self) -> &S {
+        self.try_get()
+            .unwrap_or_else(|| panic!("`{}` does not exist in the world", type_name::<S>()))
+    }
+
+    pub fn try_get_mut<S: Any>(&mut self) -> Option<&mut S> {
+        self.0
+            .get_mut(&TypeId::of::<S>())
+            .and_then(|s| s.downcast_mut())
+    }
+
+    pub fn get_mut<S: Any>(&mut self) -> &mut S {
+        self.try_get_mut()
+            .unwrap_or_else(|| panic!("`{}` does not exist in the world", type_name::<S>()))
+    }
+}
+
 pub struct MvuRuntimeBuilder<A: Application> {
     model: Option<A::RootModel>,
-    state: Option<A::State>,
+    world: World,
     buffer_size: usize,
 }
 
@@ -205,9 +249,8 @@ impl<A: Application> MvuRuntimeBuilder<A> {
     pub fn defaults() -> Self
     where
         A::RootModel: Default,
-        A::State: Default,
     {
-        Self::new().default_model().default_state()
+        Self::new().default_model()
     }
 
     pub fn model(self, value: A::RootModel) -> Self {
@@ -217,9 +260,16 @@ impl<A: Application> MvuRuntimeBuilder<A> {
         }
     }
 
-    pub fn state(self, value: A::State) -> Self {
+    pub fn state_with<S: Any>(self, value: S) -> Self {
         Self {
-            state: Some(value),
+            world: self.world.add_with(value),
+            ..self
+        }
+    }
+
+    pub fn state<S: Any + Default>(self) -> Self {
+        Self {
+            world: self.world.add::<S>(),
             ..self
         }
     }
@@ -238,16 +288,8 @@ impl<A: Application> MvuRuntimeBuilder<A> {
         self.model(Default::default())
     }
 
-    pub fn default_state(self) -> Self
-    where
-        A::State: Default,
-    {
-        self.state(Default::default())
-    }
-
     pub fn build(self) -> (MvuRuntime<A>, ShouldRefreshSubscriber<A>) {
         let model = self.model.expect("RootModel was not initialized");
-        let state = self.state.expect("State was not initialized");
 
         let (action_tx, action_rx) = mpsc::channel(self.buffer_size);
         let (should_refresh_tx, should_refresh_rx) = mpsc::channel(self.buffer_size);
@@ -255,7 +297,7 @@ impl<A: Application> MvuRuntimeBuilder<A> {
         (
             MvuRuntime {
                 model,
-                state,
+                world: self.world,
                 queue: CommandQueue::default(),
                 dirty_regions: DirtyRegions::default(),
                 dispatcher: Dispatcher::new_root(action_tx),
@@ -271,7 +313,7 @@ impl<A: Application> Default for MvuRuntimeBuilder<A> {
     fn default() -> Self {
         Self {
             model: None,
-            state: None,
+            world: World::default(),
             buffer_size: DEFAULT_CHANNEL_BUFFER_SIZE,
         }
     }
