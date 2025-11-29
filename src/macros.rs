@@ -282,3 +282,22 @@ macro_rules! make_delegator_model {
         }
     };
 }
+
+#[macro_export]
+macro_rules! make_simple_model_getter {
+    (
+        $vis:vis struct $message_name:ident for $model:ty where Data = $data:ty;
+        $body:expr
+    ) => {
+        $vis struct $message_name;
+        impl $crate::ModelGetterMessage for $message_name {
+            type Data = $data;
+        }
+        impl $crate::ModelGetterHandler<$message_name> for $model {
+            fn getter(&self, _: $message_name) -> <$message_name as $crate::ModelGetterMessage>::Data {
+                let f: fn(&$model) -> <$message_name as $crate::ModelGetterMessage>::Data = $body;
+                f(self)
+            }
+        }
+    };
+}

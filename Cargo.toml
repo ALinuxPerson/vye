@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-frb-compat = ["dep:flutter_rust_bridge"]
+frb-compat = ["dep:flutter_rust_bridge", "dep:anyhow"]
 
 [dependencies]
+anyhow = { version = "1.0.100", optional = true }
 async-trait = "0.1.89"
-dyn-clone = "1.0.20"
 flutter_rust_bridge = { version = "2.11.1", optional = true }
 futures = "0.3.31"
 thiserror = "2.0.17"
