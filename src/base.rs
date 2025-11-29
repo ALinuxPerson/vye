@@ -33,6 +33,10 @@ pub trait Model: Send + Sync + 'static {
     type ForApp: Application;
 }
 
+pub trait ModelWithRegion: Model {
+    const REGION: <Self::ForApp as Application>::RegionId;
+}
+
 pub trait ModelHandler<M: ModelMessage>: Model {
     fn update(&mut self, message: M, ctx: &mut UpdateContext<Self::ForApp>);
 }

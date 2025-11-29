@@ -1,5 +1,5 @@
 use crate::base::{Application, Command, Model};
-use crate::{Dispatcher, ModelHandler, ModelMessage};
+use crate::{Dispatcher, ModelHandler, ModelMessage, ModelWithRegion};
 use futures::channel::mpsc;
 use futures::future::BoxFuture;
 use futures::{SinkExt, StreamExt};
@@ -32,8 +32,12 @@ impl<A> Default for CommandQueue<A> {
 pub struct DirtyRegions<A: Application>(HashSet<A::RegionId>);
 
 impl<A: Application> DirtyRegions<A> {
-    pub fn mark(&mut self, region: A::RegionId) {
+    pub fn mark_with(&mut self, region: A::RegionId) {
         self.0.insert(region);
+    }
+    
+    pub fn mark<M: ModelWithRegion<ForApp = A>>(&mut self) {
+        self.mark_with(M::REGION)
     }
 
     pub fn is_dirty(&self, region: &A::RegionId) -> bool {
@@ -58,7 +62,7 @@ impl<'rt, A: Application> UpdateContext<'rt, A> {
     }
 
     pub fn mark_dirty(&mut self, region: A::RegionId) {
-        self.dirty_regions.mark(region);
+        self.dirty_regions.mark_with(region);
     }
 }
 
