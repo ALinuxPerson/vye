@@ -38,6 +38,7 @@ macro_rules! __getter_impl {
     (
         $MsgName:ident $ModelName:ty;
         $Data:ty;
+        $body:expr
     ) => {
         impl $crate::ModelGetterMessage for $MsgName {
             type Data = $Data;
