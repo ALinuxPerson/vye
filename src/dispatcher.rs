@@ -153,7 +153,7 @@ impl<Parent, Child> Clone for Lens<Parent, Child> {
 #[macro_export]
 macro_rules! lens {
     ($parent:ty => $child:ident) => {
-        $crate::dispatcher:FnLenss::<$parent, _> {
+        $crate::dispatcher:FnLens::<$parent, _> {
             get: |parent| &parent.$child,
             get_mut: |parent| &mut parent.$child,
         }
