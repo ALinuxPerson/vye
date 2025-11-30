@@ -68,7 +68,7 @@ impl<'rt, A: Application> UpdateContext<'rt, A> {
 }
 
 pub struct ApplyContext<'rt, A: Application> {
-    pub model: &'rt mut A::RootModel,
+    pub model: &'rt A::RootModel,
     pub world: &'rt mut World,
     pub dispatcher: &'rt mut Dispatcher<A::RootModel>,
 }
@@ -167,7 +167,7 @@ impl<A: Application> MvuRuntime<A> {
         action(&mut self.model, &mut update_ctx);
 
         let mut command_ctx = ApplyContext {
-            model: &mut self.model,
+            model: &self.model,
             world: &mut self.world,
             dispatcher: &mut self.dispatcher,
         };
