@@ -91,21 +91,24 @@ impl DispatcherDef {
         let mut getter_methods = Vec::new();
 
         for method in &self.methods {
+            let attrs = &method.attrs;
+            let vis = &method.vis;
+
             match &method.kind {
                 MethodKind::New => {
-                    let vis = &method.vis;
                     dispatcher_methods.push(quote! {
+                        #(#attrs)*
                         #vis fn new(dispatcher: #crate_::Dispatcher<#model>) -> Self {
                             Self(dispatcher)
                         }
                     })
                 }
                 MethodKind::Split => {
-                    let vis = &method.vis;
                     if let Some((update_def, getter_def)) = &self.updater_getter_defs {
                         let updater_name = &update_def.name;
                         let getter_name = &getter_def.name;
                         dispatcher_methods.push(quote! {
+                            #(#attrs)*
                             #vis fn split(self) -> (#updater_name, #getter_name) {
                                 (#updater_name(::core::clone::Clone::clone(&self)), #getter_name(self))
                             }
@@ -119,13 +122,13 @@ impl DispatcherDef {
                 }
                 MethodKind::Updater(action) => {
                     let (impl_dispatcher, impl_updater) =
-                        self.generate_updater_fn(method.vis.clone(), action);
+                        self.generate_updater_fn(attrs, method.vis.clone(), action);
                     dispatcher_methods.push(impl_dispatcher);
                     updater_methods.push(impl_updater);
                 }
                 MethodKind::Getter(action) => {
                     let (impl_dispatcher, impl_getter) =
-                        self.generate_getter_fn(method.vis.clone(), action);
+                        self.generate_getter_fn(attrs, method.vis.clone(), action);
                     dispatcher_methods.push(impl_dispatcher);
                     getter_methods.push(impl_getter);
                 }
@@ -137,6 +140,7 @@ impl DispatcherDef {
 
     fn generate_updater_fn(
         &self,
+        attrs: &[Attribute],
         vis: Visibility,
         action: &MethodAction,
     ) -> (TokenStream, TokenStream) {
@@ -150,12 +154,14 @@ impl DispatcherDef {
             .map(|b| quote! { #b })
             .unwrap_or_else(|| quote! { ::core::default::Default::default() });
         let main_impl = quote! {
+            #(#attrs)*
             #vis async fn #fn_name(&mut self, #inputs) {
                 let f: fn(#inputs) -> #message_ty = |#inputs| #closure_body;
                 self.0.send(f(#args)).await
             }
         };
         let wrapper_impl = quote! {
+            #(#attrs)*
             #vis async fn #fn_name(&mut self, #inputs) {
                 self.0.#fn_name(#args).await
             }
@@ -165,6 +171,7 @@ impl DispatcherDef {
 
     fn generate_getter_fn(
         &self,
+        attrs: &[Attribute],
         vis: Visibility,
         action: &MethodAction,
     ) -> (TokenStream, TokenStream) {
@@ -184,12 +191,14 @@ impl DispatcherDef {
             .map(|rty| quote! { #rty })
             .unwrap_or_else(|| quote! { <#message_ty as #crate_::ModelGetterMessage>::Data });
         let main_impl = quote! {
+            #(#attrs)*
             #vis async fn #fn_name(&mut self, #inputs) -> #return_ty {
                 let f: fn(#inputs) -> #message_ty = |#inputs| #closure_body;
                 self.0.get(f(#args)).await
             }
         };
         let wrapper_impl = quote! {
+            #(#attrs)*
             #vis async fn #fn_name(&mut self, #inputs) -> #return_ty {
                 self.0.#fn_name(#args).await
             }
@@ -289,12 +298,14 @@ struct WrapperDef {
 }
 
 struct MethodDef {
+    attrs: Vec<Attribute>,
     vis: Visibility,
     kind: MethodKind,
 }
 
 impl Parse for MethodDef {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        let attrs = input.call(Attribute::parse_outer)?;
         let vis = input.parse::<Visibility>()?;
 
         let lookahead = input.lookahead1();
@@ -313,7 +324,7 @@ impl Parse for MethodDef {
                 ));
             };
 
-            Ok(MethodDef { vis, kind })
+            Ok(MethodDef { attrs, vis, kind })
         } else {
             let kind = input.parse::<Ident>()?;
             let signature = input.parse::<Signature>()?;
@@ -356,7 +367,7 @@ impl Parse for MethodDef {
                 body,
             };
 
-            let ty = if kind == "updater" {
+            let kind = if kind == "updater" {
                 MethodKind::Updater(action)
             } else if kind == "getter" {
                 MethodKind::Getter(action)
@@ -367,7 +378,11 @@ impl Parse for MethodDef {
                 ));
             };
 
-            Ok(MethodDef { vis, kind: ty })
+            Ok(MethodDef {
+                attrs,
+                vis,
+                kind,
+            })
         }
     }
 }
