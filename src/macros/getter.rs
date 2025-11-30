@@ -47,7 +47,7 @@ macro_rules! __getter_impl {
         impl $crate::ModelGetterHandler<$MsgName> for $ModelName {
             fn getter(&self, message: $MsgName) -> <$MsgName as $crate::ModelGetterMessage>::Data {
                 let f: fn(&$ModelName, $MsgName) -> <$MsgName as $crate::ModelGetterMessage>::Data = $body;
-                f(self, message);
+                f(self, message)
             }
         }
     };
