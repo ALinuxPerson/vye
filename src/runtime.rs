@@ -7,7 +7,7 @@ use std::any::{Any, type_name};
 use std::collections::{HashSet, VecDeque};
 use std::mem;
 use std::ops::ControlFlow;
-use type_map::TypeMap;
+use type_map::concurrent::TypeMap;
 
 const DEFAULT_CHANNEL_BUFFER_SIZE: usize = 64;
 
@@ -83,11 +83,11 @@ impl<'rt, A: Application> ApplyContext<'rt, A> {
         self.updater.send(message).await
     }
 
-    pub fn state<S: Any>(&self) -> &S {
+    pub fn state<S: Send + Sync + 'static>(&self) -> &S {
         self.world.get()
     }
 
-    pub fn state_mut<S: Any>(&mut self) -> &mut S {
+    pub fn state_mut<S: Send + Sync + 'static>(&mut self) -> &mut S {
         self.world.get_mut()
     }
 }
@@ -205,29 +205,29 @@ impl<A: Application> MvuRuntime<A> {
 pub struct World(TypeMap);
 
 impl World {
-    pub(crate) fn add_with<S: 'static>(mut self, state: S) -> Self {
+    pub(crate) fn add_with<S: Send + Sync + 'static>(mut self, state: S) -> Self {
         self.0.insert(state);
         self
     }
 
-    pub(crate) fn add<S: Default + 'static>(self) -> Self {
+    pub(crate) fn add<S: Default + Send + Sync + 'static>(self) -> Self {
         self.add_with(S::default())
     }
 
-    pub fn try_get<S: 'static>(&self) -> Option<&S> {
+    pub fn try_get<S: Send + Sync + 'static>(&self) -> Option<&S> {
         self.0.get()
     }
 
-    pub fn get<S: 'static>(&self) -> &S {
+    pub fn get<S: Send + Sync + 'static>(&self) -> &S {
         self.try_get()
             .unwrap_or_else(|| panic!("`{}` does not exist in the world", type_name::<S>()))
     }
 
-    pub fn try_get_mut<S: 'static>(&mut self) -> Option<&mut S> {
+    pub fn try_get_mut<S: Send + Sync + 'static>(&mut self) -> Option<&mut S> {
         self.0.get_mut()
     }
 
-    pub fn get_mut<S: 'static>(&mut self) -> &mut S {
+    pub fn get_mut<S: Send + Sync + 'static>(&mut self) -> &mut S {
         self.try_get_mut()
             .unwrap_or_else(|| panic!("`{}` does not exist in the world", type_name::<S>()))
     }
@@ -258,14 +258,14 @@ impl<A: Application> MvuRuntimeBuilder<A> {
         }
     }
 
-    pub fn state_with<S: Any>(self, value: S) -> Self {
+    pub fn state_with<S: Send + Sync + 'static>(self, value: S) -> Self {
         Self {
             world: self.world.add_with(value),
             ..self
         }
     }
 
-    pub fn state<S: Any + Default>(self) -> Self {
+    pub fn state<S: Default + Send + Sync + 'static>(self) -> Self {
         Self {
             world: self.world.add::<S>(),
             ..self

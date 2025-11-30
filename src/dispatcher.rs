@@ -14,8 +14,8 @@ use thiserror::Error;
 pub struct MvuRuntimeChannelClosedError;
 
 type RootModelOf<M> = <<M as Model>::ForApp as Application>::RootModel;
-type UpdateMapper<M> = dyn Fn(UpdateAction<M>) -> UpdateAction<RootModelOf<M>>;
-type GetterMapper<M> = dyn Fn(GetterAction<M>) -> GetterAction<RootModelOf<M>>;
+type UpdateMapper<M> = dyn Fn(UpdateAction<M>) -> UpdateAction<RootModelOf<M>> + Send + Sync;
+type GetterMapper<M> = dyn Fn(GetterAction<M>) -> GetterAction<RootModelOf<M>> + Send + Sync;
 
 pub struct Dispatcher<M: Model> {
     tx: mpsc::Sender<Action<RootModelOf<M>>>,
