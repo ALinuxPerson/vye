@@ -1,5 +1,5 @@
 use crate::base::{Application, Command, Model};
-use crate::{Dispatcher, ModelHandler, ModelMessage, ModelWithRegion};
+use crate::{Dispatcher, ModelHandler, ModelMessage, ModelWithRegion, Updater};
 use futures::channel::mpsc;
 use futures::future::BoxFuture;
 use futures::{SinkExt, StreamExt};
@@ -71,7 +71,7 @@ impl<'rt, A: Application> UpdateContext<'rt, A> {
 pub struct ApplyContext<'rt, A: Application> {
     pub model: &'rt A::RootModel,
     pub world: &'rt mut World,
-    pub dispatcher: &'rt mut Dispatcher<A::RootModel>,
+    pub updater: Updater<A::RootModel>,
 }
 
 impl<'rt, A: Application> ApplyContext<'rt, A> {
@@ -80,7 +80,7 @@ impl<'rt, A: Application> ApplyContext<'rt, A> {
         Msg: ModelMessage,
         A::RootModel: ModelHandler<Msg>,
     {
-        self.dispatcher.send(message).await
+        self.updater.send(message).await
     }
 
     pub fn state<S: Any>(&self) -> &S {
@@ -167,10 +167,11 @@ impl<A: Application> MvuRuntime<A> {
         };
         action(&mut self.model, &mut update_ctx);
 
+        let (updater, _) = self.dispatcher.clone().split();
         let mut command_ctx = ApplyContext {
             model: &self.model,
             world: &mut self.world,
-            dispatcher: &mut self.dispatcher,
+            updater,
         };
         while let Some(mut command) = self.queue.pop() {
             tracing::debug!(?command, "applying command");
