@@ -5,27 +5,15 @@ use async_trait::async_trait;
 use std::fmt::Debug;
 use std::hash::Hash;
 
-pub trait Application {
+pub trait Application: 'static {
     type RootModel: Model<ForApp = Self>;
-    type RegionId: Debug + Eq + Hash;
+    type RegionId: Debug + Eq + Hash + Send + Sync;
 }
 
 pub trait ModelMessage: Send + 'static {}
 
 pub trait ModelGetterMessage: Send + 'static {
     type Data: Send + 'static;
-}
-
-#[macro_export]
-macro_rules! make_model_getter_message {
-    ($(#[$($meta:meta)*])* $vis:vis struct $name:ident; type Data = $data:ty) => {
-        $(#[$($meta)*])*
-        $vis struct $name;
-
-        impl $crate::ModelGetterMessage for $name {
-            type Data = $data;
-        }
-    };
 }
 
 pub trait Model: Send + Sync + 'static {

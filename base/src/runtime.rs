@@ -2,11 +2,13 @@ use crate::base::{Application, Command, Model};
 use crate::{Dispatcher, ModelHandler, ModelMessage, ModelWithRegion, Updater};
 use futures::channel::mpsc;
 use futures::future::BoxFuture;
-use futures::{SinkExt, StreamExt};
+use futures::{SinkExt, Stream, StreamExt};
 use std::any::{Any, type_name};
 use std::collections::{HashSet, VecDeque};
 use std::mem;
 use std::ops::ControlFlow;
+use std::pin::{pin, Pin};
+use std::task::{Context, Poll};
 use type_map::concurrent::TypeMap;
 
 const DEFAULT_CHANNEL_BUFFER_SIZE: usize = 64;
@@ -97,6 +99,14 @@ pub struct ShouldRefreshSubscriber<A: Application>(mpsc::Receiver<A::RegionId>);
 impl<A: Application> ShouldRefreshSubscriber<A> {
     pub async fn recv(&mut self) -> Option<A::RegionId> {
         self.0.next().await
+    }
+}
+
+impl<A: Application> Stream for ShouldRefreshSubscriber<A> {
+    type Item = A::RegionId;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        pin!(&mut self.0).poll_next(cx)
     }
 }
 
