@@ -151,15 +151,18 @@ mod updater {
                     }
                 })
                 .collect::<Vec<Field>>();
+
             let ctx_name = ctx_name.unwrap_or_else(|| Token![_](Span::call_site()).into());
             let field_names = fields
                 .iter()
                 .map(|f| f.ident.as_ref().expect("expected ident for field to exist"))
                 .collect::<Vec<_>>();
             let name = Ident::new(&ccase!(pascal, self.name.to_string()), Span::call_site());
+            let attrs = &self.attrs;
             let block = &self.block;
             Ok(quote! {
                 // todo: add ability to specify visibility of #name
+                #(#attrs)*
                 struct #name {
                     // todo: add ability to specify visibility and attributes of fields
                     #(#fields),*
