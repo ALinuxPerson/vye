@@ -3,7 +3,16 @@ pub mod macros;
 
 #[doc(hidden)]
 pub mod __macros {
+    #[cfg(feature = "frb-compat")]
+    pub extern crate flutter_rust_bridge;
+
+    #[cfg(feature = "frb-compat")]
+    pub extern crate anyhow;
+
     pub use async_trait::async_trait;
+
+    #[cfg(feature = "frb-compat")]
+    pub use flutter_rust_bridge::frb;
 }
 
 pub mod base;
