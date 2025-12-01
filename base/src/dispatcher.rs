@@ -239,3 +239,56 @@ impl<M: Model> Clone for Getter<M> {
         Self(self.0.clone())
     }
 }
+
+#[doc(hidden)]
+pub mod __private {
+    pub trait Sealed {}
+
+    pub struct Token(());
+
+    impl Token {
+        pub const fn new() -> Self {
+            Self(())
+        }
+    }
+
+    impl Default for Token {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+}
+
+pub trait WrappedDispatcher: __private::Sealed {
+    type Model: Model;
+
+    #[doc(hidden)]
+    fn __new(dispatcher: Dispatcher<Self::Model>, _token: __private::Token) -> Self;
+}
+
+pub trait SplittableWrappedDispatcher: WrappedDispatcher + Clone {
+    type Updater: WrappedUpdater<WrappedDispatcher = Self>;
+    type Getter: WrappedGetter<WrappedDispatcher = Self>;
+
+    #[doc(hidden)]
+    fn __split(self, _token: __private::Token) -> (Self::Updater, Self::Getter) {
+        (
+            Self::Updater::__new(self.clone(), __private::Token::new()),
+            Self::Getter::__new(self, __private::Token::new()),
+        )
+    }
+}
+
+pub trait WrappedUpdater: __private::Sealed {
+    type WrappedDispatcher: SplittableWrappedDispatcher<Updater = Self>;
+
+    #[doc(hidden)]
+    fn __new(dispatcher: Self::WrappedDispatcher, _token: __private::Token) -> Self;
+}
+
+pub trait WrappedGetter: __private::Sealed {
+    type WrappedDispatcher: SplittableWrappedDispatcher<Getter = Self>;
+
+    #[doc(hidden)]
+    fn __new(dispatcher: Self::WrappedDispatcher, _token: __private::Token) -> Self;
+}

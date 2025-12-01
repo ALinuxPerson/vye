@@ -47,6 +47,16 @@ impl DispatcherDef {
                 #(#dispatcher_methods)*
             }
         };
+        let impl_wrapped_dispatcher_for_ty = quote! {
+            impl #crate_::WrappedDispatcher for #name {
+                type Model = #model_ty;
+                
+                fn __new(dispatcher: #crate_::Dispatcher<Self::Model>, _: #crate_::dispatcher::__private::Token) -> Self {
+                    Self(dispatcher)
+                }
+            }
+            impl #crate_::dispatcher::__private::Sealed for #name {}
+        };
         let wrappers = self
             .updater_getter_defs
             .as_ref()
@@ -57,12 +67,27 @@ impl DispatcherDef {
                 let getter_attrs = &getter_def.ty_attrs;
 
                 quote! {
+                    impl #crate_::SplittableWrappedDispatcher for #name {
+                        type Updater = #updater_name;
+                        type Getter = #getter_name;
+                    }
+                    
                     #(#updater_attrs)*
                     #vis struct #updater_name(#name);
 
                     impl #updater_name {
                         #(#updater_methods)*
                     }
+                    
+                    impl #crate_::WrappedUpdater for #updater_name {
+                        type WrappedDispatcher = #name;
+                        
+                        fn __new(dispatcher: Self::WrappedDispatcher, _: #crate_::dispatcher::__private::Token) -> Self {
+                            Self(dispatcher)
+                        }
+                    }
+                    
+                    impl #crate_::dispatcher::__private::Sealed for #updater_name {}
 
                     #(#getter_attrs)*
                     #vis struct #getter_name(#name);
@@ -70,6 +95,16 @@ impl DispatcherDef {
                     impl #getter_name {
                         #(#getter_methods)*
                     }
+                    
+                    impl #crate_::WrappedGetter for #getter_name {
+                        type WrappedDispatcher = #name;
+
+                        fn __new(dispatcher: Self::WrappedDispatcher, _: #crate_::dispatcher::__private::Token) -> Self {
+                            Self(dispatcher)
+                        }
+                    }
+                    
+                    impl #crate_::dispatcher::__private::Sealed for #getter_name {}
                 }
             })
             .unwrap_or_default();
@@ -77,6 +112,7 @@ impl DispatcherDef {
         Ok(quote! {
             #dispatcher_struct
             #impl_dispatcher
+            #impl_wrapped_dispatcher_for_ty
             #wrappers
         })
     }
@@ -95,14 +131,12 @@ impl DispatcherDef {
             let vis = &method.vis;
 
             match &method.kind {
-                MethodKind::New => {
-                    dispatcher_methods.push(quote! {
-                        #(#attrs)*
-                        #vis fn new(dispatcher: #crate_::Dispatcher<#model>) -> Self {
-                            Self(dispatcher)
-                        }
-                    })
-                }
+                MethodKind::New => dispatcher_methods.push(quote! {
+                    #(#attrs)*
+                    #vis fn new(dispatcher: #crate_::Dispatcher<#model>) -> Self {
+                        #crate_::WrappedDispatcher::__new(dispatcher, #crate_::dispatcher::__private::Token::new())
+                    }
+                }),
                 MethodKind::Split => {
                     if let Some((update_def, getter_def)) = &self.updater_getter_defs {
                         let updater_name = &update_def.name;
@@ -110,7 +144,7 @@ impl DispatcherDef {
                         dispatcher_methods.push(quote! {
                             #(#attrs)*
                             #vis fn split(self) -> (#updater_name, #getter_name) {
-                                (#updater_name(::core::clone::Clone::clone(&self)), #getter_name(self))
+                                #crate_::SplittableWrappedDispatcher::__split(self, #crate_::dispatcher::__private::Token::new())
                             }
                         })
                     } else {
@@ -137,12 +171,16 @@ impl DispatcherDef {
 
         Ok((dispatcher_methods, updater_methods, getter_methods))
     }
+}
 
-    fn generate_updater_fn(
+impl DispatcherDef {
+    fn generate_action_fn(
         &self,
         attrs: &[Attribute],
         vis: Visibility,
         action: &MethodAction,
+        method_call: TokenStream,
+        return_ty: Option<TokenStream>,
     ) -> (TokenStream, TokenStream) {
         let fn_name = &action.signature.ident;
         let inputs = &action.signature.inputs;
@@ -153,20 +191,34 @@ impl DispatcherDef {
             .as_ref()
             .map(|b| quote! { #b })
             .unwrap_or_else(|| quote! { ::core::default::Default::default() });
+
+        let return_signature = return_ty.map(|rty| quote! { -> #rty }).unwrap_or_default();
+
         let main_impl = quote! {
             #(#attrs)*
-            #vis async fn #fn_name(&mut self, #inputs) {
+            #vis async fn #fn_name(&mut self, #inputs) #return_signature {
                 let f: fn(#inputs) -> #message_ty = |#inputs| #closure_body;
-                self.0.send(f(#args)).await
+                self.0.#method_call(f(#args)).await
             }
         };
+
         let wrapper_impl = quote! {
             #(#attrs)*
-            #vis async fn #fn_name(&mut self, #inputs) {
+            #vis async fn #fn_name(&mut self, #inputs) #return_signature {
                 self.0.#fn_name(#args).await
             }
         };
+
         (main_impl, wrapper_impl)
+    }
+
+    fn generate_updater_fn(
+        &self,
+        attrs: &[Attribute],
+        vis: Visibility,
+        action: &MethodAction,
+    ) -> (TokenStream, TokenStream) {
+        self.generate_action_fn(attrs, vis, action, quote! { send }, None)
     }
 
     fn generate_getter_fn(
@@ -176,34 +228,14 @@ impl DispatcherDef {
         action: &MethodAction,
     ) -> (TokenStream, TokenStream) {
         let crate_ = &self.crate_;
-        let fn_name = &action.signature.ident;
-        let inputs = &action.signature.inputs;
         let message_ty = &action.message_ty;
-        let args = extract_args(inputs);
-        let closure_body = action
-            .body
-            .as_ref()
-            .map(|b| quote! { #b })
-            .unwrap_or_else(|| quote! { ::core::default::Default::default() });
         let return_ty = action
             .return_ty
             .as_ref()
             .map(|rty| quote! { #rty })
             .unwrap_or_else(|| quote! { <#message_ty as #crate_::ModelGetterMessage>::Data });
-        let main_impl = quote! {
-            #(#attrs)*
-            #vis async fn #fn_name(&mut self, #inputs) -> #return_ty {
-                let f: fn(#inputs) -> #message_ty = |#inputs| #closure_body;
-                self.0.get(f(#args)).await
-            }
-        };
-        let wrapper_impl = quote! {
-            #(#attrs)*
-            #vis async fn #fn_name(&mut self, #inputs) -> #return_ty {
-                self.0.#fn_name(#args).await
-            }
-        };
-        (main_impl, wrapper_impl)
+
+        self.generate_action_fn(attrs, vis, action, quote! { get }, Some(return_ty))
     }
 }
 
@@ -378,11 +410,7 @@ impl Parse for MethodDef {
                 ));
             };
 
-            Ok(MethodDef {
-                attrs,
-                vis,
-                kind,
-            })
+            Ok(MethodDef { attrs, vis, kind })
         }
     }
 }
