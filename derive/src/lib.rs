@@ -1,5 +1,3 @@
-mod getter;
-mod updater;
 mod wrap_dispatcher;
 mod message {
     use darling::FromMeta;
@@ -42,26 +40,6 @@ pub fn dispatcher(args: TokenStream, input: TokenStream) -> TokenStream {
     let _args = syn::parse_macro_input!(args as dispatcher::DispatcherArgs);
     let input = syn::parse_macro_input!(input as syn::ItemImpl);
     match dispatcher::build(input) {
-        Ok(tokens) => tokens.into(),
-        Err(err) => err.to_compile_error().into(),
-    }
-}
-
-#[proc_macro_attribute]
-pub fn updater(args: TokenStream, input: TokenStream) -> TokenStream {
-    let args = syn::parse_macro_input!(args as updater::UpdaterArgs);
-    let input = syn::parse_macro_input!(input as syn::ItemImpl);
-    match updater::build(input) {
-        Ok(tokens) => tokens.into(),
-        Err(err) => err.to_compile_error().into(),
-    }
-}
-
-#[proc_macro_attribute]
-pub fn getter(args: TokenStream, input: TokenStream) -> TokenStream {
-    let _args = syn::parse_macro_input!(args as getter::GetterArgs);
-    let input = syn::parse_macro_input!(input as syn::ItemImpl);
-    match getter::build(input) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }
