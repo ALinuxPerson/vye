@@ -1,15 +1,25 @@
-use std::mem;
 use crate::crate_;
 use convert_case::ccase;
-use darling::FromMeta;
+use darling::{FromAttributes, FromMeta};
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::quote;
+use quote::{ToTokens, quote};
+use std::mem;
 use syn::punctuated::Punctuated;
-use syn::spanned::Spanned;
 use syn::{
     Attribute, Block, Field, FieldMutability, FnArg, Generics, ImplItem, ItemImpl, Pat, PatIdent,
     PatType, PathArguments, ReturnType, Token, Type, TypePath, Visibility,
 };
+
+fn parse_then_filter<T: FromAttributes>(
+    attributes: Vec<Attribute>,
+) -> syn::Result<(Vec<Attribute>, T)> {
+    let value = T::from_attributes(&attributes)?;
+    let attributes = attributes
+        .into_iter()
+        .filter(|attr| !attr.path().is_ident("vye"))
+        .collect();
+    Ok((attributes, value))
+}
 
 #[derive(FromMeta)]
 #[darling(derive_syn_parse)]
@@ -55,7 +65,15 @@ enum DispatcherItemKind {
     Getter { data_ty: Box<Type> },
 }
 
+#[derive(FromAttributes, Default)]
+#[darling(attributes(vye))]
+struct DispatcherItemArgs {
+    #[darling(default)]
+    name: Option<Ident>,
+}
+
 struct DispatcherItem {
+    args: DispatcherItemArgs,
     kind: DispatcherItemKind,
     attrs: Vec<Attribute>,
     vis: Visibility,
@@ -108,10 +126,12 @@ impl DispatcherItem {
                 "Dispatcher functions must have a self parameter",
             )
         })?;
+        let (attrs, args) = parse_then_filter(value.attrs)?;
 
         Ok(Self {
             kind,
-            attrs: value.attrs,
+            args,
+            attrs,
             vis: value.vis,
             name: value.sig.ident,
             generics: value.sig.generics,
@@ -137,58 +157,93 @@ fn is_update_context(pat_ty: &PatType) -> Option<&Ident> {
     }
 }
 
+#[derive(FromAttributes, Default)]
+#[darling(attributes(vye))]
+struct FieldArgs {
+    #[darling(default)]
+    vis: Option<Visibility>,
+}
+
+struct DispatcherField {
+    args: FieldArgs,
+    attrs: Vec<Attribute>,
+    name: Ident,
+    ty: Type,
+}
+
+impl DispatcherField {
+    fn new(
+        fn_arg: FnArg,
+        kind: &DispatcherItemKind,
+        ctx_name: &mut Option<Ident>,
+    ) -> syn::Result<Option<Self>> {
+        match fn_arg {
+            // self type, skip
+            FnArg::Receiver(_) => Ok(None),
+            FnArg::Typed(pat_type) => {
+                // `&mut UpdateContext<App>`, skip
+                if let DispatcherItemKind::Updater = kind
+                    && let Some(ident) = is_update_context(&pat_type)
+                {
+                    *ctx_name = Some(ident.clone());
+                    return Ok(None);
+                }
+
+                // todo: more sophisticated error handling for this case
+                let Pat::Ident(PatIdent { ident: name, .. }) = *pat_type.pat else {
+                    return Ok(None);
+                };
+
+                let (attrs, field_args) = parse_then_filter(pat_type.attrs)?;
+                Ok(Some(Self {
+                    args: field_args,
+                    attrs,
+                    name,
+                    ty: *pat_type.ty,
+                }))
+            }
+        }
+    }
+
+    fn to_field(&self) -> Field {
+        Field {
+            attrs: self.attrs.clone(),
+            vis: self.args.vis.clone().unwrap_or(Visibility::Inherited),
+            mutability: FieldMutability::None,
+            colon_token: Some(Token![:](self.name.span())),
+            ident: Some(self.name.clone()),
+            ty: self.ty.clone(),
+        }
+    }
+}
+
+impl ToTokens for DispatcherField {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.to_field().to_tokens(tokens)
+    }
+}
+
 impl DispatcherItem {
-    fn make_fields(&mut self, ctx_name: &mut Option<Ident>) -> Vec<Field> {
+    fn make_fields(&mut self, ctx_name: &mut Option<Ident>) -> syn::Result<Vec<DispatcherField>> {
         mem::take(&mut self.inputs)
             .into_iter()
-            .filter_map(|fn_arg| match fn_arg {
-                // self type, skip
-                FnArg::Receiver(_) => None,
-                FnArg::Typed(pat_type) => {
-                    // `&mut UpdateContext<App>`, skip
-                    if let DispatcherItemKind::Updater = self.kind
-                        && let Some(ident) = is_update_context(&pat_type)
-                    {
-                        *ctx_name = Some(ident.clone());
-                        return None;
-                    }
-
-                    // todo: more sophisticated error handling for this case
-                    let Pat::Ident(ident) = *pat_type.pat else {
-                        return None;
-                    };
-                    let ident_span = ident.span();
-                    Some(Field {
-                        attrs: pat_type.attrs,
-
-                        // todo: make visibility configurable via proc macro attribute
-                        vis: Visibility::Inherited,
-
-                        mutability: FieldMutability::None,
-                        ident: Some(ident.ident),
-                        colon_token: Some(Token![:](ident_span)),
-                        ty: *pat_type.ty,
-                    })
-                }
-            })
-            .collect()
+            .filter_map(|fn_arg| DispatcherField::new(fn_arg, &self.kind, ctx_name).transpose())
+            .collect::<syn::Result<Vec<_>>>()
     }
 
     fn expand(mut self, crate_: &TokenStream, model_ty: &Type) -> syn::Result<TokenStream> {
         let mut ctx_name = None;
-        let fields = self.make_fields(&mut ctx_name);
-        let field_names = fields
-            .iter()
-            .map(|f| f.ident.as_ref().expect("expected ident for field to exist"))
-            .collect::<Vec<_>>();
-        let name = Ident::new(&ccase!(pascal, self.name.to_string()), Span::call_site());
+        let fields = self.make_fields(&mut ctx_name)?;
+        let field_names = fields.iter().map(|f| &f.name).collect::<Vec<_>>();
+        let name = self.args.name.unwrap_or_else(|| {
+            Ident::new(&ccase!(pascal, self.name.to_string()), Span::call_site())
+        });
         let attrs = &self.attrs;
         let vis = &self.vis;
         let block = &self.block;
         let struct_decl = quote! {
             #(#attrs)*
             #vis struct #name {
-                // todo: add ability to specify visibility and attributes of fields
                 #(#fields),*
             }
         };
@@ -216,7 +271,7 @@ impl DispatcherItem {
                         #block
                     }
                 }
-            })
+            }),
         }
     }
 }
