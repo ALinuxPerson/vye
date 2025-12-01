@@ -248,7 +248,7 @@ impl<'a> DispatcherContext<'a> {
             impl #crate_::dispatcher::__private::Sealed for #updater_name {}
             impl #updater_name {
                 #new_fn_vis fn new(dispatcher: #crate_::Dispatcher<#model_ty>) -> Self {
-                    #crate_::WrappedGetter::__new(#dispatcher_name::new(dispatcher), #crate_::dispatcher::__private::Token::new())
+                    #crate_::WrappedUpdater::__new(#dispatcher_name::new(dispatcher), #crate_::dispatcher::__private::Token::new())
                 }
                 #(#updater_fns)*
             }
