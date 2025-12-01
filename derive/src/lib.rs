@@ -18,18 +18,14 @@ use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Ident, Span};
 use quote::quote;
 
-thread_local! {
-    static CRATE: proc_macro2::TokenStream = match crate_name("vye").expect("`vye` crate should be present in `Cargo.toml`") {
+fn crate_() -> proc_macro2::TokenStream {
+    match crate_name("vye").expect("`vye` crate should be present in `Cargo.toml`") {
         FoundCrate::Itself => quote! { crate },
         FoundCrate::Name(name) => {
             let ident = Ident::new(&name, Span::call_site());
             quote! { #ident }
         }
-    };
-}
-
-fn crate_() -> proc_macro2::TokenStream {
-    CRATE.with(|c| c.clone())
+    }
 }
 
 #[proc_macro]
