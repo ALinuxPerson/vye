@@ -27,6 +27,15 @@ struct GenerateDispatcherArgs {
 
     #[darling(default)]
     vis: Option<Visibility>,
+
+    #[darling(multiple, rename = "attr")]
+    attrs: Vec<syn::Meta>,
+
+    #[darling(multiple, rename = "updater_attr")]
+    updater_attrs: Vec<syn::Meta>,
+
+    #[darling(multiple, rename = "getter_attr")]
+    getter_attrs: Vec<syn::Meta>,
 }
 
 impl GenerateDispatcherArgs {
@@ -175,18 +184,16 @@ impl<'a> DispatcherContext<'a> {
             )
     }
 
-    fn generate_wrapped_dispatcher(
-        &self,
-        args: &GenerateDispatcherArgs,
-    ) -> TokenStream {
+    fn generate_wrapped_dispatcher(&self, args: &GenerateDispatcherArgs) -> TokenStream {
         let crate_ = &self.crate_;
         let dispatcher_name = args.dispatcher(&self.model_name);
         let vis = args.vis.as_ref().unwrap_or(&Visibility::Inherited);
+        let attrs = &args.attrs;
         let new_fn_vis = self.new_fn_vis;
         let new_fn_attrs = self.new_fn_attrs;
         let model_ty = self.model_ty;
         let mut ret = quote! {
-            // todo: add ability to add attributes to dispatcher
+            #(#attrs)*
             #vis struct #dispatcher_name(#crate_::Dispatcher<#model_ty>);
             impl #dispatcher_name {
                 #(#new_fn_attrs)*
@@ -208,18 +215,26 @@ impl<'a> DispatcherContext<'a> {
             impl #dispatcher_name { #(#dispatcher_fns)* }
         });
         if self.has_split_fn {
-            ret.extend(self.generate_updater_getter(&dispatcher_name, updater_fns, getter_fns))
+            ret.extend(self.generate_updater_getter(
+                args,
+                &dispatcher_name,
+                updater_fns,
+                getter_fns,
+            ))
         }
         ret
     }
 
     fn generate_updater_getter(
         &self,
+        args: &GenerateDispatcherArgs,
         dispatcher_name: &Ident,
         updater_fns: Vec<TokenStream>,
         getter_fns: Vec<TokenStream>,
     ) -> TokenStream {
         let crate_ = &self.crate_;
+        let updater_attrs = &args.updater_attrs;
+        let getter_attrs = &args.getter_attrs;
         let (updater_name, getter_name) = self.updater_getter_idents();
         let new_fn_vis = self.new_fn_vis;
         let split_fn_vis = self.split_fn_vis;
@@ -237,7 +252,7 @@ impl<'a> DispatcherContext<'a> {
                 type Getter = #getter_name;
             }
 
-            // todo: add ability to add attributes to updater
+            #(#updater_attrs)*
             #split_fn_vis struct #updater_name(#dispatcher_name);
             impl #crate_::WrappedUpdater for #updater_name {
                 type WrappedDispatcher = #dispatcher_name;
@@ -247,13 +262,14 @@ impl<'a> DispatcherContext<'a> {
             }
             impl #crate_::dispatcher::__private::Sealed for #updater_name {}
             impl #updater_name {
+                // todo: add ability to add attributes to new
                 #new_fn_vis fn new(dispatcher: #crate_::Dispatcher<#model_ty>) -> Self {
                     #crate_::WrappedUpdater::__new(#dispatcher_name::new(dispatcher), #crate_::dispatcher::__private::Token::new())
                 }
                 #(#updater_fns)*
             }
 
-            // todo: add ability to add attributes to getter
+            #(#getter_attrs)*
             #split_fn_vis struct #getter_name(#dispatcher_name);
             impl #crate_::WrappedGetter for #getter_name {
                 type WrappedDispatcher = #dispatcher_name;
@@ -263,6 +279,7 @@ impl<'a> DispatcherContext<'a> {
             }
             impl #crate_::dispatcher::__private::Sealed for #getter_name {}
             impl #getter_name {
+                // todo: add ability to add attributes to new
                 #new_fn_vis fn new(dispatcher: #crate_::Dispatcher<#model_ty>) -> Self {
                     #crate_::WrappedGetter::__new(#dispatcher_name::new(dispatcher), #crate_::dispatcher::__private::Token::new())
                 }
