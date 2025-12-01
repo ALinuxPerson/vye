@@ -9,6 +9,8 @@ pub mod __macros {
     #[cfg(feature = "frb-compat")]
     pub extern crate anyhow;
 
+    pub extern crate futures;
+
     pub use async_trait::async_trait;
 
     #[cfg(feature = "frb-compat")]

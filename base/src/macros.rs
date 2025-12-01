@@ -65,9 +65,9 @@ macro_rules! wrap_app_handle_for_frb {
             #[$crate::__macros::frb(sync)]
             $(#[$($should_refresh_meta)*])*
             $should_refresh_vis async fn should_refresh(&mut self, sink: $StreamSink<$RegionId>) -> $crate::__macros::anyhow::Result<()> {
-                let subscriber = self.0.should_refresh();
+                let mut subscriber = self.0.should_refresh();
                 $crate::__macros::flutter_rust_bridge::spawn(async move {
-                    while let Some(region) = subscriber.recv().await {
+                    while let Some(region) = $crate::__macros::futures::StreamExt::next(&mut subscriber).await {
                         sink.add(region).ok();
                     }
                 });
