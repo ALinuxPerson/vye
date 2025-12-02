@@ -14,6 +14,8 @@ async-trait = "0.1.89"
 crossbeam = "0.8.4"
 flutter_rust_bridge = { version = "2.11.1", optional = true }
 futures = "0.3.31"
+hashbrown = "0.16.1"
+spin = "0.10.0"
 thiserror = "2.0.17"
 tokio = { version = "1.48.0", features = ["rt-multi-thread"], optional = true }
 tracing = "0.1.41"

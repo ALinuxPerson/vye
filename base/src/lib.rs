@@ -1,3 +1,6 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+extern crate alloc;
+
 #[macro_use]
 pub mod macros;
 
@@ -152,3 +155,21 @@ pub use base::*;
 pub use dispatcher::*;
 pub use runtime::*;
 pub use handle::*;
+
+#[cfg(feature = "std")]
+type VRwLock<T> = std::sync::RwLock<T>;
+
+#[cfg(feature = "std")]
+type VRWLockReadGuard<'a, T> = std::sync::RwLockReadGuard<'a, T>;
+
+#[cfg(feature = "std")]
+type VRWLockWriteGuard<'a, T> = std::sync::RwLockWriteGuard<'a, T>;
+
+#[cfg(not(feature = "std"))]
+type VRwLock<T> = spin::RwLock<T>;
+
+#[cfg(not(feature = "std"))]
+type VRWLockReadGuard<'a, T> = spin::RwLockReadGuard<'a, T>;
+
+#[cfg(not(feature = "std"))]
+type VRWLockWriteGuard<'a, T> = spin::RwLockWriteGuard<'a, T>;

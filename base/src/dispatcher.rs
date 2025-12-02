@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use crate::runtime::UpdateAction;
 use crate::{
     Application, Lens, Model, ModelBase, ModelGetterHandler, ModelGetterMessage, ModelHandler,
@@ -5,7 +6,7 @@ use crate::{
 };
 use futures::SinkExt;
 use futures::channel::mpsc;
-use std::sync::Arc;
+use alloc::sync::Arc;
 use thiserror::Error;
 
 #[derive(Error, Debug)]

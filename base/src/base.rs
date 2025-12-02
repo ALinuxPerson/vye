@@ -1,11 +1,13 @@
 use crate::dispatcher::MvuRuntimeChannelClosedError;
 use crate::runtime::{ApplyContext, UpdateContext};
 use async_trait::async_trait;
-use std::fmt::Debug;
-use std::hash::Hash;
-use std::marker::PhantomData;
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use core::fmt::Debug;
+use core::hash::Hash;
+use core::marker::PhantomData;
+use alloc::sync::Arc;
+use alloc::boxed::Box;
 use thiserror::Error;
+use crate::{VRWLockReadGuard, VRWLockWriteGuard, VRwLock};
 
 pub trait Application: 'static {
     type RootModel: Model<ForApp = Self>;
@@ -78,19 +80,31 @@ impl From<ModelGetterChannelClosedError> for Error {
 #[error("the channel to the model getter is closed")]
 pub struct ModelGetterChannelClosedError;
 
-pub struct ModelBase<M>(Arc<RwLock<M>>);
+pub struct ModelBase<M>(Arc<VRwLock<M>>);
 
 impl<M> ModelBase<M> {
     pub fn new(model: M) -> Self {
-        Self(Arc::new(RwLock::new(model)))
+        Self(Arc::new(VRwLock::new(model)))
     }
 
-    pub fn read(&self) -> RwLockReadGuard<'_, M> {
-        self.0.read().unwrap()
+    pub fn read(&self) -> VRWLockReadGuard<'_, M> {
+        #[cfg(feature = "std")]
+        let ret = self.0.read().unwrap();
+        
+        #[cfg(not(feature = "std"))]
+        let ret = self.0.read();
+        
+        ret
     }
 
-    pub fn write(&self) -> RwLockWriteGuard<'_, M> {
-        self.0.write().unwrap()
+    pub fn write(&self) -> VRWLockWriteGuard<'_, M> {
+        #[cfg(feature = "std")]
+        let ret = self.0.write().unwrap();
+        
+        #[cfg(not(feature = "std"))]
+        let ret = self.0.write();
+        
+        ret
     }
 }
 
@@ -99,10 +113,6 @@ pub type Lens<Parent, Child> = fn(&Parent) -> &ModelBase<Child>;
 #[macro_export]
 macro_rules! lens {
     ($parent:ty => $child:ident) => {
-        // $crate::dispatcher:FnLens::<$parent, _> {
-        //     get: |parent| &parent.$child,
-        //     get_mut: |parent| &mut parent.$child,
-        // }
         |parent: $parent| &parent.$child
     };
 }

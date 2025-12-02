@@ -60,6 +60,7 @@ struct GenerateDispatcherArgs {
     #[darling(default)]
     split: bool,
 
+    /// Outer attributes of the generated dispatcher struct
     #[darling(multiple, rename = "attr")]
     attrs: Vec<syn::Meta>,
 

@@ -2,13 +2,15 @@ use crate::base::{Application, Command, Model};
 use crate::{Dispatcher, ModelBase, ModelHandler, ModelMessage, ModelWithRegion, Updater};
 use futures::channel::mpsc;
 use futures::{SinkExt, Stream, StreamExt};
-use std::any::type_name;
-use std::collections::{HashSet, VecDeque};
-use std::mem;
-use std::ops::ControlFlow;
-use std::pin::{pin, Pin};
-use std::task::{Context, Poll};
+use core::any::type_name;
+use alloc::collections::VecDeque;
+use core::mem;
+use core::ops::ControlFlow;
+use core::pin::{pin, Pin};
+use core::task::{Context, Poll};
 use type_map::concurrent::TypeMap;
+use alloc::boxed::Box;
+use hashbrown::HashSet;
 
 const DEFAULT_CHANNEL_BUFFER_SIZE: usize = 64;
 
