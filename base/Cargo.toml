@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
+default = ["std"]
 frb-compat = ["dep:flutter_rust_bridge", "dep:anyhow"]
 tokio = ["dep:tokio"]
 std = []
