@@ -143,10 +143,61 @@ pub struct DispatcherArgs {
 #[derive(FromAttributes, Default)]
 #[darling(attributes(vye))]
 struct MethodArgs {
+    /// Name of the generated Message struct
     #[darling(default)]
     name: Option<Ident>,
+
+    /// Applicable to getters only; clones the field as determined by the function name and returns
+    /// it
     #[darling(default)]
-    dispatcher: Option<Visibility>,
+    clone: bool,
+
+    /// Applicable to getters only; copies the field as determined by the function name and returns
+    /// it
+    #[darling(default)]
+    copy: bool,
+
+    /// Common attributes for dispatcher, updater, getter methods
+    #[darling(multiple, rename = "method_attr")]
+    method_attrs: Vec<syn::Meta>,
+
+    /// Attributes for the generated dispatcher method
+    #[darling(multiple, rename = "dispatcher_attr")]
+    dispatcher_attrs: Vec<syn::Meta>,
+
+    /// Attributes for the generated updater method
+    #[darling(multiple, rename = "updater_attr")]
+    updater_attrs: Vec<syn::Meta>,
+
+    /// Attributes for the generated getter method
+    #[darling(multiple, rename = "getter_attr")]
+    getter_attrs: Vec<syn::Meta>,
+}
+
+impl MethodArgs {
+    pub fn dispatcher_attrs(&self) -> syn::Result<Vec<TokenStream>> {
+        self.method_attrs
+            .iter()
+            .chain(&self.dispatcher_attrs)
+            .map(meta_to_token_stream)
+            .collect()
+    }
+
+    pub fn updater_attrs(&self) -> syn::Result<Vec<TokenStream>> {
+        self.method_attrs
+            .iter()
+            .chain(&self.updater_attrs)
+            .map(meta_to_token_stream)
+            .collect()
+    }
+
+    pub fn getter_attrs(&self) -> syn::Result<Vec<TokenStream>> {
+        self.method_attrs
+            .iter()
+            .chain(&self.getter_attrs)
+            .map(meta_to_token_stream)
+            .collect()
+    }
 }
 
 #[derive(FromAttributes, Default)]
@@ -484,7 +535,7 @@ impl<'a> DispatcherContext<'a> {
             .handlers
             .iter()
             .map(|h| h.generate_dispatcher_method())
-            .collect::<Vec<_>>();
+            .collect::<syn::Result<Vec<_>>>()?;
 
         // Core Dispatcher definition
         let mut tokens = quote! {
@@ -550,7 +601,7 @@ impl<'a> DispatcherContext<'a> {
         let mut getter_fns = Vec::new();
 
         for handler in &self.handlers {
-            let wrapper_fn = handler.generate_wrapper_method();
+            let wrapper_fn = handler.generate_wrapper_method()?;
             match handler.kind {
                 MethodKind::Updater { .. } => updater_fns.push(wrapper_fn),
                 MethodKind::Getter { .. } => getter_fns.push(wrapper_fn),
@@ -587,6 +638,7 @@ impl<'a> DispatcherContext<'a> {
             impl #crate_::dispatcher::__private::Sealed for #updater_name {}
 
             impl #updater_name {
+                // todo: add ability to add attrs here
                 #new_vis fn new(dispatcher: #crate_::Dispatcher<#model_ty>) -> Self {
                     #crate_::WrappedUpdater::__new(#dispatcher_name::new(dispatcher), #crate_::dispatcher::__private::Token::new())
                 }
@@ -605,6 +657,7 @@ impl<'a> DispatcherContext<'a> {
             impl #crate_::dispatcher::__private::Sealed for #getter_name {}
 
             impl #getter_name {
+                // todo: add ability to add attrs here
                 #new_vis fn new(dispatcher: #crate_::Dispatcher<#model_ty>) -> Self {
                     #crate_::WrappedGetter::__new(#dispatcher_name::new(dispatcher), #crate_::dispatcher::__private::Token::new())
                 }
@@ -655,6 +708,19 @@ impl<'a> ParsedMethod<'a> {
                 }
             }
             MethodKind::Getter { return_ty } => {
+                let field_name = &self.sig.ident;
+                let block = if block.stmts.is_empty() {
+                    if self.args.copy {
+                        quote! { self.#field_name }
+                    } else if self.args.clone {
+                        quote! { self.#field_name.clone() }
+                    } else {
+                        quote! { #block }
+                    }
+                } else {
+                    quote! { #block }
+                };
+
                 quote! {
                     #struct_def
                     impl #impl_gen #crate_::ModelGetterMessage for #struct_name #ty_gen #where_clause {
@@ -683,12 +749,8 @@ impl<'a> ParsedMethod<'a> {
     }
 
     /// Generates the `async fn name(...)` for the main Dispatcher struct
-    fn generate_dispatcher_method(&self) -> TokenStream {
-        let vis = self
-            .args
-            .dispatcher
-            .clone()
-            .unwrap_or(Visibility::Inherited);
+    fn generate_dispatcher_method(&self) -> syn::Result<TokenStream> {
+        let vis = self.vis;
         let fn_name = &self.sig.ident;
         let struct_name = self.struct_name();
 
@@ -696,50 +758,50 @@ impl<'a> ParsedMethod<'a> {
         let field_names = self.fields.iter().map(|f| f.name).collect::<Vec<_>>();
         let field_tys = self.fields.iter().map(|f| f.ty);
         let closure_construction = quote! { #struct_name { #(#field_names),* } };
+        let dispatcher_attrs = self.args.dispatcher_attrs()?;
 
         match &self.kind {
             MethodKind::Updater { .. } => {
-                quote! {
+                Ok(quote! {
+                    #(#dispatcher_attrs)*
                     #vis async fn #fn_name(&mut self, #(#args),*) {
                         let f: fn(#(#field_tys),*) -> #struct_name = |#(#field_names),*| #closure_construction;
                         self.0.send(f(#(#field_names),*)).await
                     }
-                }
+                })
             }
             MethodKind::Getter { return_ty } => {
-                quote! {
+                Ok(quote! {
+                    #(#dispatcher_attrs)*
                     #vis async fn #fn_name(&mut self, #(#args),*) -> #return_ty {
                         let f: fn(#(#field_tys),*) -> #struct_name = |#(#field_names),*| #closure_construction;
                         self.0.get(f(#(#field_names),*)).await
                     }
-                }
+                })
             }
-            _ => TokenStream::new(),
+            _ => Ok(TokenStream::new()),
         }
     }
 
     /// Generates the method for the Updater/Getter wrapper (delegates to inner dispatcher)
-    fn generate_wrapper_method(&self) -> TokenStream {
-        let vis = self
-            .args
-            .dispatcher
-            .clone()
-            .unwrap_or(Visibility::Inherited);
+    fn generate_wrapper_method(&self) -> syn::Result<TokenStream> {
+        let vis = self.vis;
         let fn_name = &self.sig.ident;
 
         let args = self.generate_args();
         let field_names = self.fields.iter().map(|f| f.name);
-
-        let return_type = match &self.kind {
-            MethodKind::Getter { return_ty } => quote! { -> #return_ty },
-            _ => TokenStream::new(),
+        let (return_type, attrs) = match &self.kind {
+            MethodKind::Getter { return_ty } => (quote! { -> #return_ty }, self.args.getter_attrs()?),
+            MethodKind::Updater { .. } => (TokenStream::new(), self.args.updater_attrs()?),
+            _ => (TokenStream::new(), Vec::new()),
         };
 
-        quote! {
+        Ok(quote! {
+            #(#attrs)*
             #vis async fn #fn_name(&mut self, #(#args),*) #return_type {
                 self.0.#fn_name(#(#field_names),*).await
             }
-        }
+        })
     }
 }
 
