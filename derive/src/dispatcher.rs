@@ -59,6 +59,7 @@ struct GenerateDispatcherArgs {
     dispatcher: Option<Ident>,
     #[darling(default)]
     vis: Option<Visibility>,
+    clone: bool,
     #[darling(multiple, rename = "attr")]
     attrs: Vec<syn::Meta>,
     #[darling(multiple, rename = "updater_attr")]
@@ -72,6 +73,14 @@ impl GenerateDispatcherArgs {
         self.dispatcher
             .clone()
             .unwrap_or_else(|| format_ident!("{model_name}Dispatcher"))
+    }
+
+    fn derive_clone(&self) -> TokenStream {
+        if self.clone {
+            quote! { #[derive(Clone)] }
+        } else {
+            TokenStream::new()
+        }
     }
 
     fn attrs(&self) -> syn::Result<Vec<TokenStream>> {
@@ -426,6 +435,7 @@ impl<'a> DispatcherContext<'a> {
 
         let dispatcher_name = args.dispatcher_ident(&self.model_name);
         let vis = args.vis.as_ref().unwrap_or(&Visibility::Inherited);
+        let derive_clone = args.derive_clone();
         let dispatcher_attrs = args.attrs()?;
 
         // Constructor info
@@ -444,6 +454,7 @@ impl<'a> DispatcherContext<'a> {
         // Core Dispatcher definition
         let mut tokens = quote! {
             #(#dispatcher_attrs)*
+            #derive_clone
             #vis struct #dispatcher_name(#crate_::Dispatcher<#model_ty>);
 
             impl #dispatcher_name {
@@ -512,6 +523,7 @@ impl<'a> DispatcherContext<'a> {
             }
         }
 
+        let derive_clone = args.derive_clone();
         let updater_attrs = args.updater_attrs()?;
         let getter_attrs = args.getter_attrs()?;
 
@@ -530,6 +542,7 @@ impl<'a> DispatcherContext<'a> {
 
             // Updater Struct
             #(#updater_attrs)*
+            #derive_clone
             #split_vis struct #updater_name(#dispatcher_name);
 
             impl #crate_::WrappedUpdater for #updater_name {
@@ -547,6 +560,7 @@ impl<'a> DispatcherContext<'a> {
 
             // Getter Struct
             #(#getter_attrs)*
+            #derive_clone
             #split_vis struct #getter_name(#dispatcher_name);
 
             impl #crate_::WrappedGetter for #getter_name {
