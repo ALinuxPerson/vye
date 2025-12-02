@@ -3,7 +3,7 @@ use crate::{Dispatcher, ModelHandler, ModelMessage, ModelWithRegion, Updater};
 use futures::channel::mpsc;
 use futures::future::BoxFuture;
 use futures::{SinkExt, Stream, StreamExt};
-use std::any::{Any, type_name};
+use std::any::type_name;
 use std::collections::{HashSet, VecDeque};
 use std::mem;
 use std::ops::ControlFlow;

@@ -1,5 +1,4 @@
-use proc_macro_crate::{FoundCrate, crate_name};
-use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro2::{Ident, TokenStream};
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;

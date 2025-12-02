@@ -176,6 +176,9 @@ struct MethodArgs {
     /// Applicable to getters only; clones the field as determined by the function name and returns
     /// it
     #[darling(default)]
+    // `clone` is implied anyway if it is not passed but there is no block, just add this here to
+    // keep the illusion
+    #[allow(dead_code)]
     clone: bool,
 
     /// Applicable to getters only; copies the field as determined by the function name and returns
