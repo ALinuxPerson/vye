@@ -5,8 +5,8 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::{ToTokens, quote};
 use std::ops::ControlFlow;
 use syn::{
-    Attribute, Block, Field, FieldMutability, FnArg, Generics, ImplItem, ItemImpl, Pat, PatIdent,
-    PatType, PathArguments, ReturnType, Signature, Token, Type, TypePath, Visibility,
+    Attribute, Block, Field, FieldMutability, FnArg, Generics, ImplItem, ItemImpl, MetaList, Pat,
+    PatIdent, PatType, PathArguments, ReturnType, Signature, Token, Type, TypePath, Visibility,
 };
 
 fn parse_then_filter<T: FromAttributes>(
@@ -38,11 +38,33 @@ struct GenerateDispatcherArgs {
     getter_attrs: Vec<syn::Meta>,
 }
 
+fn to_attribute(meta: &syn::Meta) -> syn::Result<TokenStream> {
+    match meta {
+        syn::Meta::List(MetaList { tokens, .. }) => Ok(quote! { #[#tokens] }),
+        _ => Err(syn::Error::new_spanned(
+            meta,
+            "Expected attribute meta to be a list",
+        )),
+    }
+}
+
 impl GenerateDispatcherArgs {
     pub fn dispatcher(&self, model_name: &Ident) -> Ident {
         self.dispatcher
             .clone()
             .unwrap_or_else(|| Ident::new(&format!("{model_name}Dispatcher"), Span::call_site()))
+    }
+
+    pub fn attrs(&self) -> syn::Result<Vec<TokenStream>> {
+        self.attrs.iter().map(to_attribute).collect()
+    }
+
+    pub fn updater_attrs(&self) -> syn::Result<Vec<TokenStream>> {
+        self.updater_attrs.iter().map(to_attribute).collect()
+    }
+
+    pub fn getter_attrs(&self) -> syn::Result<Vec<TokenStream>> {
+        self.getter_attrs.iter().map(to_attribute).collect()
     }
 }
 
@@ -144,7 +166,7 @@ impl<'a> DispatcherContext<'a> {
         let items = quote! { #(#items)* };
 
         if let Some(args) = &self.args.generate {
-            let wrapped_dispatcher = self.generate_wrapped_dispatcher(args);
+            let wrapped_dispatcher = self.generate_wrapped_dispatcher(args)?;
 
             Ok(quote! {
                 #items
@@ -184,16 +206,19 @@ impl<'a> DispatcherContext<'a> {
             )
     }
 
-    fn generate_wrapped_dispatcher(&self, args: &GenerateDispatcherArgs) -> TokenStream {
+    fn generate_wrapped_dispatcher(
+        &self,
+        args: &GenerateDispatcherArgs,
+    ) -> syn::Result<TokenStream> {
         let crate_ = &self.crate_;
         let dispatcher_name = args.dispatcher(&self.model_name);
         let vis = args.vis.as_ref().unwrap_or(&Visibility::Inherited);
-        let attrs = &args.attrs;
+        let attrs = args.attrs()?;
         let new_fn_vis = self.new_fn_vis;
         let new_fn_attrs = self.new_fn_attrs;
         let model_ty = self.model_ty;
         let mut ret = quote! {
-            #(#[#attrs])*
+            #(#attrs)*
             #vis struct #dispatcher_name(#crate_::Dispatcher<#model_ty>);
             impl #dispatcher_name {
                 #(#new_fn_attrs)*
@@ -220,9 +245,9 @@ impl<'a> DispatcherContext<'a> {
                 &dispatcher_name,
                 updater_fns,
                 getter_fns,
-            ))
+            )?)
         }
-        ret
+        Ok(ret)
     }
 
     fn generate_updater_getter(
@@ -231,16 +256,16 @@ impl<'a> DispatcherContext<'a> {
         dispatcher_name: &Ident,
         updater_fns: Vec<TokenStream>,
         getter_fns: Vec<TokenStream>,
-    ) -> TokenStream {
+    ) -> syn::Result<TokenStream> {
         let crate_ = &self.crate_;
-        let updater_attrs = &args.updater_attrs;
-        let getter_attrs = &args.getter_attrs;
+        let updater_attrs = args.updater_attrs()?;
+        let getter_attrs = args.getter_attrs()?;
         let (updater_name, getter_name) = self.updater_getter_idents();
         let new_fn_vis = self.new_fn_vis;
         let split_fn_vis = self.split_fn_vis;
         let split_fn_attrs = self.split_fn_attrs;
         let model_ty = self.model_ty;
-        quote! {
+        Ok(quote! {
             impl #dispatcher_name {
                 #(#split_fn_attrs)*
                 #split_fn_vis fn split(self) -> (#updater_name, #getter_name) {
@@ -252,7 +277,7 @@ impl<'a> DispatcherContext<'a> {
                 type Getter = #getter_name;
             }
 
-            #(#[#updater_attrs])*
+            #(#updater_attrs)*
             #split_fn_vis struct #updater_name(#dispatcher_name);
             impl #crate_::WrappedUpdater for #updater_name {
                 type WrappedDispatcher = #dispatcher_name;
@@ -269,7 +294,7 @@ impl<'a> DispatcherContext<'a> {
                 #(#updater_fns)*
             }
 
-            #(#[#getter_attrs])*
+            #(#getter_attrs)*
             #split_fn_vis struct #getter_name(#dispatcher_name);
             impl #crate_::WrappedGetter for #getter_name {
                 type WrappedDispatcher = #dispatcher_name;
@@ -285,7 +310,7 @@ impl<'a> DispatcherContext<'a> {
                 }
                 #(#getter_fns)*
             }
-        }
+        })
     }
 }
 
