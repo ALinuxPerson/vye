@@ -1,3 +1,4 @@
+use darling::FromAttributes;
 use syn::{
     Attribute, Block, Signature, Token, Type, Visibility, braced,
     parse::{Parse, ParseStream},
@@ -62,4 +63,17 @@ impl Parse for InterfaceImpl {
 
         Ok(InterfaceImpl { self_ty, items })
     }
+}
+
+/// Parses attributes into type T, returning the parsed value and the remaining attributes
+/// (excluding the ones consumed by T, marked by "vye").
+pub fn extract_vye_attrs<T: FromAttributes>(
+    attributes: &[Attribute],
+) -> syn::Result<(Vec<&Attribute>, T)> {
+    let value = T::from_attributes(attributes)?;
+    let remaining_attributes = attributes
+        .iter()
+        .filter(|attr| !attr.path().is_ident("vye"))
+        .collect();
+    Ok((remaining_attributes, value))
 }

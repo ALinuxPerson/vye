@@ -1,4 +1,4 @@
-use crate::crate_;
+use crate::{crate_, utils};
 use crate::utils::{InterfaceImpl, MaybeStubFn};
 use convert_case::{Case, Casing};
 use darling::{FromAttributes, FromMeta};
@@ -11,19 +11,6 @@ use syn::{
 // ==================================================================================
 // Utilities & Helpers
 // ==================================================================================
-
-/// Parses attributes into type T, returning the parsed value and the remaining attributes
-/// (excluding the ones consumed by T, marked by "vye").
-fn extract_vye_attrs<T: FromAttributes>(
-    attributes: &[Attribute],
-) -> syn::Result<(Vec<&Attribute>, T)> {
-    let value = T::from_attributes(attributes)?;
-    let remaining_attributes = attributes
-        .iter()
-        .filter(|attr| !attr.path().is_ident("vye"))
-        .collect();
-    Ok((remaining_attributes, value))
-}
 
 fn meta_to_token_stream(meta: &syn::Meta) -> syn::Result<TokenStream> {
     match meta {
@@ -351,7 +338,7 @@ impl<'a> ParsedMethod<'a> {
         validate_signature(&func.sig)?;
 
         let block = func.block.as_ref();
-        let (attrs, args) = extract_vye_attrs(&func.attrs)?;
+        let (attrs, args) = utils::extract_vye_attrs(&func.attrs)?;
         let kind = MethodKind::determine(&func.sig, block)?;
 
         // Parse arguments into fields (skipping self and context)
@@ -409,7 +396,7 @@ impl<'a> ParsedField<'a> {
             _ => return Ok(None),
         };
 
-        let (attrs, args) = extract_vye_attrs(&pat_type.attrs)?;
+        let (attrs, args) = utils::extract_vye_attrs(&pat_type.attrs)?;
 
         Ok(Some(Self {
             args,
