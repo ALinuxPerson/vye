@@ -792,7 +792,7 @@ impl<'a> ParsedMethod<'a> {
             }),
             MethodKind::Getter { return_ty } => Ok(quote! {
                 #(#dispatcher_attrs)*
-                #vis fn #fn_name(&mut self, #(#args),*) -> #return_ty {
+                #vis fn #fn_name(&self, #(#args),*) -> #return_ty {
                     let f: fn(#(#field_tys),*) -> #struct_name = |#(#field_names),*| #closure_construction;
                     self.0.get(f(#(#field_names),*))
                 }
@@ -808,30 +808,27 @@ impl<'a> ParsedMethod<'a> {
 
         let args = self.generate_args();
         let field_names = self.fields.iter().map(|f| f.name);
-        let (return_type, attrs, async_, dot_await) = match &self.kind {
+        let (attrs, async_, mut_, return_ty, dot_await) = match &self.kind {
             MethodKind::Getter { return_ty } => (
-                quote! { -> #return_ty },
                 self.args.getter_attrs()?,
                 TokenStream::new(),
                 TokenStream::new(),
+                quote! { -> #return_ty },
+                TokenStream::new(),
             ),
             MethodKind::Updater { .. } => (
-                TokenStream::new(),
                 self.args.updater_attrs()?,
                 quote! { async },
+                quote! { mut },
+                TokenStream::new(),
                 quote! { .await },
             ),
-            _ => (
-                TokenStream::new(),
-                Vec::new(),
-                TokenStream::new(),
-                TokenStream::new(),
-            ),
+            _ => Default::default(),
         };
 
         Ok(quote! {
             #(#attrs)*
-            #vis #async_ fn #fn_name(&mut self, #(#args),*) #return_type {
+            #vis #async_ fn #fn_name(&#mut_ self, #(#args),*) #return_ty {
                 self.0.#fn_name(#(#field_names),*) #dot_await
             }
         })

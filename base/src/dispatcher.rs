@@ -51,7 +51,7 @@ impl<M: Model> Dispatcher<M> {
             .expect("the channel to the mvu runtime is closed")
     }
 
-    pub fn get<Msg>(&mut self, message: Msg) -> Msg::Data
+    pub fn get<Msg>(&self, message: Msg) -> Msg::Data
     where
         Msg: ModelGetterMessage,
         M: ModelGetterHandler<Msg>,
@@ -143,7 +143,7 @@ impl<M: Model> Clone for Updater<M> {
 pub struct Getter<M: Model>(Dispatcher<M>);
 
 impl<M: Model> Getter<M> {
-    pub fn get<Msg>(&mut self, message: Msg) -> Msg::Data
+    pub fn get<Msg>(&self, message: Msg) -> Msg::Data
     where
         Msg: ModelGetterMessage,
         M: ModelGetterHandler<Msg>,
