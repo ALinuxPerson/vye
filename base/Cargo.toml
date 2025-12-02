@@ -6,6 +6,7 @@ edition = "2024"
 [features]
 frb-compat = ["dep:flutter_rust_bridge", "dep:anyhow"]
 tokio = ["dep:tokio"]
+std = []
 
 [dependencies]
 anyhow = { version = "1.0.100", optional = true }
