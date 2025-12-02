@@ -193,7 +193,7 @@ impl<'a> DispatcherContext<'a> {
         let new_fn_attrs = self.new_fn_attrs;
         let model_ty = self.model_ty;
         let mut ret = quote! {
-            #(#attrs)*
+            #(#[#attrs])*
             #vis struct #dispatcher_name(#crate_::Dispatcher<#model_ty>);
             impl #dispatcher_name {
                 #(#new_fn_attrs)*
@@ -252,7 +252,7 @@ impl<'a> DispatcherContext<'a> {
                 type Getter = #getter_name;
             }
 
-            #(#updater_attrs)*
+            #(#[#updater_attrs])*
             #split_fn_vis struct #updater_name(#dispatcher_name);
             impl #crate_::WrappedUpdater for #updater_name {
                 type WrappedDispatcher = #dispatcher_name;
@@ -269,7 +269,7 @@ impl<'a> DispatcherContext<'a> {
                 #(#updater_fns)*
             }
 
-            #(#getter_attrs)*
+            #(#[#getter_attrs])*
             #split_fn_vis struct #getter_name(#dispatcher_name);
             impl #crate_::WrappedGetter for #getter_name {
                 type WrappedDispatcher = #dispatcher_name;
