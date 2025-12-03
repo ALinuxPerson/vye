@@ -2,5 +2,5 @@ extern crate vye_base;
 
 pub use vye_base::*;
 
-#[cfg(feature = "derive")]
-pub use vye_derive::{dispatcher, command};
+#[cfg(feature = "macros")]
+pub use vye_macros::{dispatcher, command};
