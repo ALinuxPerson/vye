@@ -79,10 +79,10 @@ macro_rules! __command_impl {
         impl $crate::Command for $CommandName {
             type ForApp = <$ModelName as $crate::Model>::ForApp;
 
-            async fn apply(&mut self, ctx: &mut $crate::ApplyContext<'_, Self::ForApp>) {
+            async fn apply(&mut self, ctx: &mut $crate::CommandContext<'_, Self::ForApp>) {
                 async fn f(
                     $this: &mut $CommandName,
-                    $ctx: &mut $crate::ApplyContext<'_, <$CommandName as $crate::Command>::ForApp>,
+                    $ctx: &mut $crate::CommandContext<'_, <$CommandName as $crate::Command>::ForApp>,
                 ) {
                     $body
                 }

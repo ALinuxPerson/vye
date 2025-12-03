@@ -75,13 +75,13 @@ impl<'rt, A: Application> UpdateContext<'rt, A> {
     }
 }
 
-pub struct ApplyContext<'rt, A: Application> {
+pub struct CommandContext<'rt, A: Application> {
     pub model: &'rt ModelBase<A::RootModel>,
     pub world: &'rt mut World,
     pub updater: Updater<A::RootModel>,
 }
 
-impl<'rt, A: Application> ApplyContext<'rt, A> {
+impl<'rt, A: Application> CommandContext<'rt, A> {
     pub async fn send_message<Msg>(&mut self, message: Msg)
     where
         Msg: ModelMessage,
@@ -176,7 +176,7 @@ impl<A: Application> MvuRuntime<A> {
         action(self.model.clone(), &mut update_ctx);
 
         let (updater, _) = self.dispatcher.clone().split();
-        let mut command_ctx = ApplyContext {
+        let mut command_ctx = CommandContext {
             model: &self.model,
             world: &mut self.world,
             updater,

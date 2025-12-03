@@ -14,7 +14,7 @@ use syn::{
 #[derive(FromMeta)]
 #[darling(derive_syn_parse)]
 pub struct CommandArgs {
-    /// Inferred by the presence of `ApplyContext<App>`, _if present_, in the function
+    /// Inferred by the presence of `CommandContext<App>`, _if present_, in the function
     /// arguments.
     for_app: Option<Type>,
 
@@ -42,7 +42,7 @@ struct FieldArgs {
     #[darling(default)]
     field: bool,
 
-    /// The field shall be retrieved as state from the ApplyContext. This is the default if
+    /// The field shall be retrieved as state from the CommandContext. This is the default if
     /// neither `field` nor `state` is specified. Must be a (mutable) reference.
     #[darling(default)]
     #[allow(dead_code)]
@@ -119,7 +119,7 @@ impl<'a> CommandContext<'a> {
                 None => {
                     return Err(syn::Error::new_spanned(
                         &item.sig,
-                        "Command functions must have an `&mut ApplyContext<App>` argument or specify `for_app`",
+                        "Command functions must have an `&mut CommandContext<App>` argument or specify `for_app`",
                     ));
                 }
             },
@@ -182,7 +182,7 @@ impl<'a> CommandContext<'a> {
             impl #impl_generics #crate_::Command for #struct_name #ty_generics #where_clause {
                 type ForApp = #for_app_ty;
 
-                async fn apply(&mut self, #ctx_name: &mut #crate_::ApplyContext<'_, #for_app_ty>) {
+                async fn apply(&mut self, #ctx_name: &mut #crate_::CommandContext<'_, #for_app_ty>) {
                     let Self { #(#field_names),* } = self;
                     #(#var_statements)*
                     #block
@@ -200,11 +200,11 @@ struct ParsedField<'a> {
 }
 
 fn is_apply_context(ty: &TypeReference) -> Option<&Type> {
-    // from `&mut ApplyContext<MyApp>`, extract `MyApp`
+    // from `&mut CommandContext<MyApp>`, extract `MyApp`
     if ty.mutability.is_some()
         && let Type::Path(ty_path) = &*ty.elem
         && let Some(segment) = ty_path.path.segments.last()
-        && segment.ident == "ApplyContext"
+        && segment.ident == "CommandContext"
         && let PathArguments::AngleBracketed(AngleBracketedGenericArguments { args, .. }) =
             &segment.arguments
         && args.len() == 1

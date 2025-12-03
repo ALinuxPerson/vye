@@ -1,5 +1,5 @@
 use crate::dispatcher::MvuRuntimeChannelClosedError;
-use crate::runtime::{ApplyContext, UpdateContext};
+use crate::runtime::{CommandContext, UpdateContext};
 use crate::{VRWLockReadGuard, VRWLockWriteGuard, VRwLock};
 use alloc::sync::Arc;
 use async_trait::async_trait;
@@ -51,7 +51,7 @@ pub trait ModelGetterHandler<M: ModelGetterMessage>: Model {
 pub trait Command: Debug + Send + Sync {
     type ForApp: Application;
 
-    async fn apply(&mut self, ctx: &mut ApplyContext<'_, Self::ForApp>);
+    async fn apply(&mut self, ctx: &mut CommandContext<'_, Self::ForApp>);
 }
 
 #[derive(Error, Debug)]
