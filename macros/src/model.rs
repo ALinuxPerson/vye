@@ -146,14 +146,14 @@ impl FnKind {
         impl SelfTy {
             fn analyze<'a>(args: impl Iterator<Item = &'a FnArg>) -> Option<Self> {
                 for arg in args {
-                    if let FnArg::Receiver(receiver) = arg {
-                        if receiver.reference.is_some() {
-                            return if receiver.mutability.is_some() {
-                                Some(Self::Mutable)
-                            } else {
-                                Some(Self::Shared)
-                            };
-                        }
+                    if let FnArg::Receiver(receiver) = arg
+                        && receiver.reference.is_some()
+                    {
+                        return if receiver.mutability.is_some() {
+                            Some(Self::Mutable)
+                        } else {
+                            Some(Self::Shared)
+                        };
                     }
                 }
 
