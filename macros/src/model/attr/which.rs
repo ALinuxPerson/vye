@@ -1,13 +1,13 @@
 use super::raw;
+use crate::model::attr::raw::{ProcessedMeta, ProcessedMetaRef};
 use either::Either;
 use proc_macro2::Ident;
 use std::iter;
-use syn::Meta;
 
-fn meta_or_empty<'a, I: Iterator<Item = &'a Meta>>(
+fn meta_or_empty<'a, I: Iterator<Item = ProcessedMetaRef<'a>>>(
     meta: &'a Option<raw::MetaConfig>,
     f: impl FnOnce(&'a raw::MetaConfig) -> I,
-) -> impl Iterator<Item = &'a Meta> {
+) -> impl Iterator<Item = ProcessedMetaRef<'a>> {
     match meta.as_ref() {
         Some(config) => Either::Left(f(config)),
         None => Either::Right(iter::empty()),
@@ -18,26 +18,38 @@ pub trait With {
     const SUFFIX: &'static str;
 
     fn name(name: &raw::NameConfig) -> &Option<Ident>;
-    fn outer_meta_impl(meta: &raw::MetaConfig) -> impl Iterator<Item = &Meta>;
-    fn inner_meta_impl(meta: &raw::InnerMetaConfig) -> &Vec<Meta>;
-    fn fn_meta_impl(meta: &raw::MetaConfig) -> impl Iterator<Item = &Meta>;
+    fn outer_meta_impl(meta: &raw::MetaConfig) -> impl Iterator<Item = ProcessedMetaRef<'_>>;
+    fn inner_meta_impl(meta: &raw::InnerMetaConfig) -> impl Iterator<Item = ProcessedMetaRef<'_>>;
+    fn fn_meta_impl(meta: &raw::MetaConfig) -> impl Iterator<Item = ProcessedMetaRef<'_>>;
 
-    fn outer_meta(meta: &Option<raw::MetaConfig>) -> impl Iterator<Item = &Meta> {
+    fn outer_meta(meta: &Option<raw::MetaConfig>) -> impl Iterator<Item = ProcessedMetaRef<'_>> {
         meta_or_empty(meta, Self::outer_meta_impl)
     }
 
-    fn inner_meta(meta: &Option<raw::MetaConfig>) -> impl Iterator<Item = &Meta> {
+    fn outer_meta_owned(meta: &Option<raw::MetaConfig>) -> impl Iterator<Item = ProcessedMeta> {
+        Self::outer_meta(meta).map(ProcessedMetaRef::to_owned)
+    }
+
+    fn inner_meta(meta: &Option<raw::MetaConfig>) -> impl Iterator<Item = ProcessedMetaRef<'_>> {
         match meta.as_ref() {
             Some(raw::MetaConfig {
                 inner: Some(config),
                 ..
-            }) => Either::Left(Self::inner_meta_impl(config).iter()),
+            }) => Either::Left(Self::inner_meta_impl(config)),
             _ => Either::Right(iter::empty()),
         }
     }
 
-    fn fn_meta(meta: &Option<raw::MetaConfig>) -> impl Iterator<Item = &Meta> {
+    fn inner_meta_owned(meta: &Option<raw::MetaConfig>) -> impl Iterator<Item = ProcessedMeta> {
+        Self::inner_meta(meta).map(ProcessedMetaRef::to_owned)
+    }
+
+    fn fn_meta(meta: &Option<raw::MetaConfig>) -> impl Iterator<Item = ProcessedMetaRef<'_>> {
         meta_or_empty(meta, Self::fn_meta_impl)
+    }
+
+    fn fn_meta_owned(meta: &Option<raw::MetaConfig>) -> impl Iterator<Item = ProcessedMeta> {
+        Self::fn_meta(meta).map(ProcessedMetaRef::to_owned)
     }
 }
 
@@ -50,15 +62,15 @@ impl With for Dispatcher {
         &name.dispatcher
     }
 
-    fn outer_meta_impl(meta: &raw::MetaConfig) -> impl Iterator<Item = &Meta> {
+    fn outer_meta_impl(meta: &raw::MetaConfig) -> impl Iterator<Item = ProcessedMetaRef<'_>> {
         meta.dispatcher()
     }
 
-    fn inner_meta_impl(meta: &raw::InnerMetaConfig) -> &Vec<Meta> {
-        &meta.dispatcher
+    fn inner_meta_impl(meta: &raw::InnerMetaConfig) -> impl Iterator<Item = ProcessedMetaRef<'_>> {
+        meta.dispatcher()
     }
 
-    fn fn_meta_impl(meta: &raw::MetaConfig) -> impl Iterator<Item = &Meta> {
+    fn fn_meta_impl(meta: &raw::MetaConfig) -> impl Iterator<Item = ProcessedMetaRef<'_>> {
         meta.dispatcher_fn()
     }
 }
@@ -72,15 +84,15 @@ impl With for Updater {
         &name.updater
     }
 
-    fn outer_meta_impl(meta: &raw::MetaConfig) -> impl Iterator<Item = &Meta> {
+    fn outer_meta_impl(meta: &raw::MetaConfig) -> impl Iterator<Item = ProcessedMetaRef<'_>> {
         meta.updater()
     }
 
-    fn inner_meta_impl(meta: &raw::InnerMetaConfig) -> &Vec<Meta> {
-        &meta.updater
+    fn inner_meta_impl(meta: &raw::InnerMetaConfig) -> impl Iterator<Item = ProcessedMetaRef<'_>> {
+        meta.updater()
     }
 
-    fn fn_meta_impl(meta: &raw::MetaConfig) -> impl Iterator<Item = &Meta> {
+    fn fn_meta_impl(meta: &raw::MetaConfig) -> impl Iterator<Item = ProcessedMetaRef<'_>> {
         meta.updater_fn()
     }
 }
@@ -94,15 +106,15 @@ impl With for Getter {
         &name.getter
     }
 
-    fn outer_meta_impl(meta: &raw::MetaConfig) -> impl Iterator<Item = &Meta> {
+    fn outer_meta_impl(meta: &raw::MetaConfig) -> impl Iterator<Item = ProcessedMetaRef<'_>> {
         meta.getter()
     }
 
-    fn inner_meta_impl(meta: &raw::InnerMetaConfig) -> &Vec<Meta> {
-        &meta.getter
+    fn inner_meta_impl(meta: &raw::InnerMetaConfig) -> impl Iterator<Item = ProcessedMetaRef<'_>> {
+        meta.getter()
     }
 
-    fn fn_meta_impl(meta: &raw::MetaConfig) -> impl Iterator<Item = &Meta> {
+    fn fn_meta_impl(meta: &raw::MetaConfig) -> impl Iterator<Item = ProcessedMetaRef<'_>> {
         meta.getter_fn()
     }
 }

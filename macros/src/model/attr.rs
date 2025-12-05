@@ -1,6 +1,7 @@
 pub(super) mod raw;
 mod which;
 
+use crate::model::attr::raw::{ProcessedMeta, ProcessedMetaRef};
 use convert_case::ccase;
 use proc_macro2::{Ident, Span};
 use quote::format_ident;
@@ -85,25 +86,25 @@ impl ModelArgs {
 
 pub struct Properties {
     pub name: Ident,
-    pub outer_meta: Vec<Meta>,
-    pub inner_meta: Vec<Meta>,
+    pub outer_meta: Vec<ProcessedMeta>,
+    pub inner_meta: Vec<ProcessedMeta>,
 }
 
 impl Properties {
     fn from_config<W: With>(config: &raw::DispatcherConfig, model_name: &Ident) -> Self {
         Self {
             name: resolve_name_for_model::<W>(config.name.as_ref(), model_name),
-            outer_meta: W::outer_meta(&config.meta).cloned().collect::<Vec<_>>(),
-            inner_meta: W::inner_meta(&config.meta).cloned().collect::<Vec<_>>(),
+            outer_meta: W::outer_meta_owned(&config.meta).collect::<Vec<_>>(),
+            inner_meta: W::inner_meta_owned(&config.meta).collect::<Vec<_>>(),
         }
     }
 }
 
 #[derive(Default)]
 pub struct NewMethodArgs {
-    pub dispatcher_meta: Vec<Meta>,
-    pub updater_meta: Vec<Meta>,
-    pub getter_meta: Vec<Meta>,
+    pub dispatcher_meta: Vec<ProcessedMeta>,
+    pub updater_meta: Vec<ProcessedMeta>,
+    pub getter_meta: Vec<ProcessedMeta>,
 }
 
 impl NewMethodArgs {
@@ -118,9 +119,9 @@ impl NewMethodArgs {
     pub fn parse(raw: raw::MethodArgs, span: Span) -> syn::Result<Self> {
         Self::validate(&raw, span)?;
         Ok(Self {
-            dispatcher_meta: Dispatcher::outer_meta(&raw.meta).cloned().collect(),
-            updater_meta: Updater::outer_meta(&raw.meta).cloned().collect(),
-            getter_meta: Getter::outer_meta(&raw.meta).cloned().collect(),
+            dispatcher_meta: Dispatcher::outer_meta_owned(&raw.meta).collect(),
+            updater_meta: Updater::outer_meta_owned(&raw.meta).collect(),
+            getter_meta: Getter::outer_meta_owned(&raw.meta).collect(),
         })
     }
 }
@@ -128,8 +129,8 @@ impl NewMethodArgs {
 pub struct UpdaterGetterMethodArgs {
     pub message: MessageStructProperties,
     pub fn_name: Ident,
-    pub dispatcher_fn_meta: Vec<Meta>,
-    pub fn_meta: Vec<Meta>,
+    pub dispatcher_fn_meta: Vec<ProcessedMeta>,
+    pub fn_meta: Vec<ProcessedMeta>,
 }
 
 impl UpdaterGetterMethodArgs {
@@ -137,8 +138,8 @@ impl UpdaterGetterMethodArgs {
         Self {
             message: MessageStructProperties::parse(&raw, fn_name),
             fn_name: fn_name.clone(),
-            dispatcher_fn_meta: Dispatcher::fn_meta(&raw.meta).cloned().collect(),
-            fn_meta: W::fn_meta(&raw.meta).cloned().collect(),
+            dispatcher_fn_meta: Dispatcher::fn_meta_owned(&raw.meta).collect(),
+            fn_meta: W::fn_meta_owned(&raw.meta).collect(),
         }
     }
 
@@ -198,7 +199,7 @@ impl UpdaterGetterMethodArgs {
 
 pub struct MessageStructProperties {
     pub name: Ident,
-    pub outer_meta: Vec<Meta>,
+    pub outer_meta: Vec<ProcessedMeta>,
 }
 
 impl MessageStructProperties {
@@ -208,7 +209,7 @@ impl MessageStructProperties {
             outer_meta: {
                 raw.meta
                     .as_ref()
-                    .map(|m| m.message().cloned().collect())
+                    .map(|m| m.message().map(ProcessedMetaRef::to_owned).collect())
                     .unwrap_or_default()
             },
         }

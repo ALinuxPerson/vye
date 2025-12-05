@@ -2,7 +2,8 @@ use crate::model::attr::{ModelArgs, NewMethodArgs, Properties};
 use crate::model::{ModelContext, ParsedFnArg, ParsedGetterFn, ParsedNewFn, ParsedSplitFn, ParsedUpdaterFn, ParsedUpdaterGetterFn};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{ToTokens, quote};
-use syn::{Meta, TypePath, Visibility};
+use syn::{TypePath, Visibility};
+use crate::model::attr::raw::ProcessedMeta;
 
 impl<'a> ModelContext<'a> {
     pub(super) fn generate(&self) -> TokenStream {
@@ -28,7 +29,7 @@ impl<'a> ModelContext<'a> {
     fn generate_any_struct(
         &self,
         props_accessor: impl FnOnce(&ModelArgs) -> &Properties,
-        f: impl FnOnce(&TokenStream, &Visibility, &TypePath, &Ident, &[Meta], &[Meta]) -> TokenStream,
+        f: impl FnOnce(&TokenStream, &Visibility, &TypePath, &Ident, &[ProcessedMeta], &[ProcessedMeta]) -> TokenStream,
     ) -> TokenStream {
         let props = props_accessor(&self.args);
         let crate_ = &self.crate_;
@@ -54,8 +55,8 @@ impl<'a> ModelContext<'a> {
             |a| &a.dispatcher,
             |crate_, vis, model_ty, name, outer_meta, inner_meta| {
                 quote! {
-                    #(#outer_meta)*
-                    #vis struct #name(#(#inner_meta)* #crate_::Dispatcher<#model_ty>);
+                    #(#[#outer_meta])*
+                    #vis struct #name(#(#[#inner_meta])* #crate_::Dispatcher<#model_ty>);
                 }
             },
         )
@@ -134,6 +135,7 @@ impl<'a> ModelContext<'a> {
                     Self(dispatcher)
                 }
             }
+            impl #crate_::__private::Sealed for #updater_getter_name {}
             impl #updater_getter_name {
                 #new_fn
                 #(#updater_fns)*
@@ -157,8 +159,8 @@ impl<'a> ModelContext<'a> {
             |_, vis, _, updater_name, outer_meta, inner_meta| {
                 let dispatcher_name = &self.args.dispatcher.name;
                 quote! {
-                    #(#outer_meta)*
-                    #vis struct #updater_name(#(#inner_meta)* #dispatcher_name);
+                    #(#[#outer_meta])*
+                    #vis struct #updater_name(#(#[#inner_meta])* #dispatcher_name);
                 }
             },
         )
@@ -191,12 +193,12 @@ impl<'a> ModelContext<'a> {
 
     fn generate_getter_struct(&self) -> TokenStream {
         self.generate_any_struct(
-            |a| &a.updater,
+            |a| &a.getter,
             |_, vis, _, getter_name, outer_meta, inner_meta| {
                 let dispatcher_name = &self.args.dispatcher.name;
                 quote! {
-                    #(#outer_meta)*
-                    #vis struct #getter_name(#(#inner_meta)* #dispatcher_name);
+                    #(#[#outer_meta])*
+                    #vis struct #getter_name(#(#[#inner_meta])* #dispatcher_name);
                 }
             },
         )
@@ -224,7 +226,7 @@ impl<'a> ParsedFnArg<'a> {
 
     fn generate_field(&self) -> TokenStream {
         let Self { attrs, name, ty } = *self;
-        quote! { #(#attrs)* #name: #ty }
+        quote! { #(#[#attrs])* #name: #ty }
     }
 }
 
@@ -234,14 +236,14 @@ impl ParsedNewFn {
         crate_: &TokenStream,
         wrapped_ty: &'static str,
         dispatcher_ty: TokenStream,
-        meta_fn: impl FnOnce(&NewMethodArgs) -> &Vec<Meta>,
+        meta_fn: impl FnOnce(&NewMethodArgs) -> &Vec<ProcessedMeta>,
     ) -> TokenStream {
         let wrapped_ty = Ident::new(wrapped_ty, Span::call_site());
         let vis = &self.0.vis;
         let meta = meta_fn(&self.0.method_args);
 
         quote! {
-            #(#meta)*
+            #(#[#meta])*
             #vis fn new(dispatcher: #dispatcher_ty) -> Self {
                 #crate_::#wrapped_ty::__new(dispatcher, #crate_::__private::Token::new())
             }
@@ -282,7 +284,7 @@ impl<'a> ParsedSplitFn<'a> {
         let attrs = &self.attrs;
 
         quote! {
-            #(#attrs)*
+            #(#[#attrs])*
             #vis fn split(self) -> (#updater_name, #getter_name) {
                 #crate_::WrappedDispatcher::__split(self, #crate_::__private::Token::new())
             }
@@ -298,7 +300,7 @@ impl<'a> ParsedUpdaterGetterFn<'a> {
         let fields = self.fn_args.iter().map(|fa| fa.generate_field());
 
         quote! {
-            #(#outer_meta)*
+            #(#[#outer_meta])*
             #vis struct #name {
                 #(#fields),*
             }
@@ -324,7 +326,7 @@ impl<'a> ParsedUpdaterGetterFn<'a> {
         &self,
         f: impl FnOnce(
             &Visibility,
-            &[Meta],
+            &[ProcessedMeta],
             &Ident,
             &Ident,
             Vec<&Ident>,
@@ -347,7 +349,7 @@ impl<'a> ParsedUpdaterGetterFn<'a> {
 
     fn generate_updater_getter_fn(
         &self,
-        f: impl FnOnce(&Visibility, &[Meta], &Ident, Vec<TokenStream>, Vec<&Ident>) -> TokenStream,
+        f: impl FnOnce(&Visibility, &[ProcessedMeta], &Ident, Vec<TokenStream>, Vec<&Ident>) -> TokenStream,
     ) -> TokenStream {
         let vis = self.vis;
         let meta = &self.method_args.fn_meta;
@@ -383,7 +385,7 @@ impl<'a> ParsedUpdaterFn<'a> {
                         fn update(
                             &mut self,
                             #message_name { #(#field_names),* }: #message_name,
-                            #ctx: #crate_::UpdateContext<<Self as #crate_::Model>::ForApp>,
+                            #ctx: &mut #crate_::UpdateContext<<Self as #crate_::Model>::ForApp>,
                         ) { #block }
                     }
                 }
@@ -394,7 +396,7 @@ impl<'a> ParsedUpdaterFn<'a> {
         self.common.generate_dispatcher_fn(
             |vis, meta, fn_name, message_name, field_names, fn_args| {
                 quote! {
-                    #(#meta)*
+                    #(#[#meta])*
                     #vis async fn #fn_name(&mut self, #(#fn_args),*) {
                         self.0.send(#message_name { #(#field_names),* }).await
                     }
@@ -407,9 +409,9 @@ impl<'a> ParsedUpdaterFn<'a> {
         self.common
             .generate_updater_getter_fn(|vis, meta, fn_name, fn_args, fn_arg_names| {
                 quote! {
-                    #(#meta)*
+                    #(#[#meta])*
                     #vis async fn #fn_name(&mut self, #(#fn_args),*) {
-                        self.0.#fn_name(#(#fn_arg_names),*)
+                        self.0.#fn_name(#(#fn_arg_names),*).await
                     }
                 }
             })
@@ -436,7 +438,7 @@ impl<'a> ParsedGetterFn<'a> {
                     impl #crate_::ModelGetterMessage for #message_name {
                         type Data = #ret_ty;
                     }
-                    impl #crate_::ModelHandler<#message_name> for #model_ty {
+                    impl #crate_::ModelGetterHandler<#message_name> for #model_ty {
                         fn getter(
                             &self,
                             #message_name { #(#field_names),* }: #message_name,
@@ -451,9 +453,9 @@ impl<'a> ParsedGetterFn<'a> {
             |vis, meta, fn_name, message_name, field_names, fn_args| {
                 let ret_ty = self.ret_ty;
                 quote! {
-                    #(#meta)*
+                    #(#[#meta])*
                     #vis fn #fn_name(&mut self, #(#fn_args),*) -> #ret_ty {
-                        self.0.getter(#message_name { #(#field_names),* })
+                        self.0.get(#message_name { #(#field_names),* })
                     }
                 }
             },
@@ -465,7 +467,7 @@ impl<'a> ParsedGetterFn<'a> {
             .generate_updater_getter_fn(|vis, meta, fn_name, fn_args, fn_arg_names| {
                 let ret_ty = self.ret_ty;
                 quote! {
-                    #(#meta)*
+                    #(#[#meta])*
                     #vis fn #fn_name(&mut self, #(#fn_args),*) -> #ret_ty {
                         self.0.#fn_name(#(#fn_arg_names),*)
                     }
