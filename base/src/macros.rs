@@ -1,6 +1,3 @@
-mod command_message;
-mod getter;
-
 #[cfg(feature = "frb-compat")]
 #[macro_export]
 macro_rules! wrap_app_handle_for_frb {
