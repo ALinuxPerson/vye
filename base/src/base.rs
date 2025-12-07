@@ -46,7 +46,7 @@ pub trait Model: MaybeSendSync + 'static {
 }
 
 pub trait ModelGetterHandler<M: ModelGetterMessage>: Model {
-    fn getter(&self, message: M) -> M::Data;
+    fn getter(&self) -> Signal<M::Data>;
 }
 
 #[async_trait]
@@ -121,12 +121,12 @@ impl<M: Model> ModelBase<M> {
         self.write().update(message, ctx)
     }
 
-    pub fn get<Msg>(&self, message: Msg) -> Msg::Data
+    pub fn get<Msg>(&self) -> Signal<Msg::Data>
     where
         Msg: ModelGetterMessage,
         M: ModelGetterHandler<Msg>,
     {
-        self.read().getter(message)
+        self.read().getter()
     }
 
     pub fn zoom<Child>(&self, lens: fn(&M) -> &ModelBase<Child>) -> ModelBase<Child>
@@ -161,12 +161,12 @@ impl<M> ModelBaseReader<M> {
 }
 
 impl<M: Model> ModelBaseReader<M> {
-    pub fn get<Msg>(&self, message: Msg) -> Msg::Data
+    pub fn get<Msg>(&self) -> Signal<Msg::Data>
     where
         Msg: ModelGetterMessage,
         M: ModelGetterHandler<Msg>,
     {
-        self.0.get(message)
+        self.0.get()
     }
 
     pub fn zoom<Child>(&self, lens: fn(&M) -> &ModelBase<Child>) -> ModelBaseReader<Child>

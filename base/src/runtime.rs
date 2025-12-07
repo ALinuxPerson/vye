@@ -1,5 +1,5 @@
 use crate::base::{Application, Command, Model, ModelGetterHandler, ModelGetterMessage};
-use crate::{FlushSignals, Interceptor, ModelBase, ModelBaseReader};
+use crate::{FlushSignals, Interceptor, ModelBase, ModelBaseReader, Signal};
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use core::any::type_name;
@@ -52,12 +52,12 @@ impl<'rt, A: Application> CommandContext<'rt, A> {
         self.model.read()
     }
 
-    pub fn getter<Msg>(&self, message: Msg) -> Msg::Data
+    pub fn get<Msg>(&self) -> Signal<Msg::Data>
     where
         Msg: ModelGetterMessage,
         A::RootModel: ModelGetterHandler<Msg>,
     {
-        self.model.get(message)
+        self.model.get()
     }
 
     pub fn state<S: MaybeSendSync + 'static>(&self) -> &S {

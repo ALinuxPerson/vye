@@ -1,4 +1,4 @@
-use crate::{Application, Model, ModelBase, ModelGetterHandler, ModelGetterMessage, MvuRuntimeChannelClosedError, __private};
+use crate::{Application, Model, ModelBase, ModelGetterHandler, ModelGetterMessage, MvuRuntimeChannelClosedError, Signal, __private};
 use futures::SinkExt;
 use futures::channel::mpsc;
 use std::convert::identity;
@@ -90,20 +90,12 @@ impl<M> Getter<M> {
         Self { model }
     }
 
-    pub fn get_with<Msg>(&self, message: Msg) -> Msg::Data
+    pub fn get<Msg>(&self) -> Signal<Msg::Data>
     where
         Msg: ModelGetterMessage,
         M: ModelGetterHandler<Msg>,
     {
-        self.model.get(message)
-    }
-
-    pub fn get<Msg>(&self) -> Msg::Data
-    where
-        Msg: ModelGetterMessage + Default,
-        M: ModelGetterHandler<Msg>,
-    {
-        self.get_with(Msg::default())
+        self.model.get()
     }
 
     pub fn zoom<Child>(self, lens: fn(&M) -> &ModelBase<Child>) -> Getter<Child>
