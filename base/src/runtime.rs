@@ -7,13 +7,9 @@ use crate::{
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use core::any::type_name;
-use core::mem;
 use core::ops::ControlFlow;
-use core::pin::{Pin, pin};
-use core::task::{Context, Poll};
 use futures::channel::mpsc;
-use futures::{SinkExt, Stream, StreamExt};
-use hashbrown::HashSet;
+use futures::StreamExt;
 use std::sync::Arc;
 
 const DEFAULT_CHANNEL_BUFFER_SIZE: usize = 64;
@@ -38,36 +34,13 @@ impl<A> Default for CommandQueue<A> {
     }
 }
 
-pub struct DirtyRegions<A: Application>(HashSet<A::RegionId>);
-
-impl<A: Application> DirtyRegions<A> {
-    pub fn mark_with(&mut self, region: A::RegionId) {
-        self.0.insert(region);
-    }
-
-    pub fn is_dirty(&self, region: &A::RegionId) -> bool {
-        self.0.contains(region)
-    }
-}
-
-impl<A: Application> Default for DirtyRegions<A> {
-    fn default() -> Self {
-        Self(HashSet::new())
-    }
-}
-
 pub struct UpdateContext<'rt, A: Application> {
     pub queue: &'rt mut CommandQueue<A>,
-    pub dirty_regions: &'rt mut DirtyRegions<A>,
 }
 
 impl<'rt, A: Application> UpdateContext<'rt, A> {
     pub fn emit_command<C: Command<ForApp = A> + 'static>(&mut self, command: C) {
         self.queue.emit(command);
-    }
-
-    pub fn mark_dirty(&mut self, region: A::RegionId) {
-        self.dirty_regions.mark_with(region);
     }
 }
 
@@ -103,22 +76,6 @@ impl<'rt, A: Application> CommandContext<'rt, A> {
     }
 }
 
-pub struct ShouldRefreshSubscriber<A: Application>(mpsc::Receiver<A::RegionId>);
-
-impl<A: Application> ShouldRefreshSubscriber<A> {
-    pub async fn recv(&mut self) -> Option<A::RegionId> {
-        self.0.next().await
-    }
-}
-
-impl<A: Application> Stream for ShouldRefreshSubscriber<A> {
-    type Item = A::RegionId;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        pin!(&mut self.0).poll_next(cx)
-    }
-}
-
 // NOTE: can't use `+ MaybeSend` because it is not an auto trait
 #[cfg(feature = "thread-safe")]
 pub(crate) type UpdateAction<M> =
@@ -133,12 +90,9 @@ pub struct MvuRuntime<A: Application> {
     world: World,
 
     queue: CommandQueue<A>,
-    dirty_regions: DirtyRegions<A>,
 
     dispatcher: Dispatcher<A::RootModel>,
     update_actions_rx: mpsc::Receiver<UpdateAction<A::RootModel>>,
-
-    should_refresh_tx: mpsc::Sender<A::RegionId>,
 }
 
 impl<A: Application> MvuRuntime<A> {
@@ -146,11 +100,11 @@ impl<A: Application> MvuRuntime<A> {
         MvuRuntimeBuilder::new()
     }
 
-    pub fn new(model: A::RootModel) -> (Self, ShouldRefreshSubscriber<A>) {
+    pub fn new(model: A::RootModel) -> Self {
         Self::builder().model(model).build()
     }
 
-    pub fn defaults() -> (Self, ShouldRefreshSubscriber<A>)
+    pub fn defaults() -> Self
     where
         A::RootModel: Default,
     {
@@ -181,7 +135,6 @@ impl<A: Application> MvuRuntime<A> {
     async fn handle_update(&mut self, action: UpdateAction<A::RootModel>) {
         let mut update_ctx = UpdateContext {
             queue: &mut self.queue,
-            dirty_regions: &mut self.dirty_regions,
         };
         action(self.model.clone(), &mut update_ctx);
 
@@ -194,17 +147,6 @@ impl<A: Application> MvuRuntime<A> {
         while let Some(mut command) = self.queue.pop() {
             tracing::debug!(?command, "applying command");
             command.apply(&mut command_ctx).await;
-        }
-
-        if !self.dirty_regions.0.is_empty() {
-            let dirty_regions = mem::take(&mut self.dirty_regions.0);
-
-            tracing::debug!(count = dirty_regions.len(), "notifying dirty regions");
-            for region in dirty_regions {
-                if let Err(error) = self.should_refresh_tx.send(region).await {
-                    tracing::warn!("failed to send refresh signal: {error:?}")
-                }
-            }
         }
     }
 }
@@ -316,25 +258,19 @@ impl<A: Application> MvuRuntimeBuilder<A> {
         self.model(Default::default())
     }
 
-    pub fn build(self) -> (MvuRuntime<A>, ShouldRefreshSubscriber<A>) {
+    pub fn build(self) -> MvuRuntime<A> {
         let model = self.model.expect("RootModel was not initialized");
         let model = ModelBase::new(model);
 
         let (action_tx, action_rx) = mpsc::channel(self.buffer_size);
-        let (should_refresh_tx, should_refresh_rx) = mpsc::channel(self.buffer_size);
 
-        (
-            MvuRuntime {
-                model: model.clone(),
-                world: self.world,
-                queue: CommandQueue::default(),
-                dirty_regions: DirtyRegions::default(),
-                dispatcher: Dispatcher::new_root(action_tx, model, Arc::new(self.interceptors)),
-                update_actions_rx: action_rx,
-                should_refresh_tx,
-            },
-            ShouldRefreshSubscriber(should_refresh_rx),
-        )
+        MvuRuntime {
+            model: model.clone(),
+            world: self.world,
+            queue: CommandQueue::default(),
+            dispatcher: Dispatcher::new_root(action_tx, model, Arc::new(self.interceptors)),
+            update_actions_rx: action_rx,
+        }
     }
 }
 

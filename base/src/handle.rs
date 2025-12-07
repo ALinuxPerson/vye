@@ -25,6 +25,7 @@ mod spawner {
 }
 
 pub use spawner::GlobalSpawner;
+use std::marker::PhantomData;
 
 #[cfg(feature = "frb-compat")]
 pub use spawner::FrbSpawner;
@@ -32,16 +33,11 @@ pub use spawner::FrbSpawner;
 #[cfg(feature = "tokio")]
 pub use spawner::TokioSpawner;
 
-use crate::{
-    Application, MvuRuntime, MvuRuntimeBuilder, ShouldRefreshSubscriber, WrappedDispatcher,
-};
-use crossbeam::atomic::AtomicCell;
-use futures::Stream;
-use futures::future::Either;
+use crate::{Application, MvuRuntime, MvuRuntimeBuilder, WrappedDispatcher};
 
 pub struct AppHandle<A: Application, WD> {
     dispatcher: WD,
-    should_refresh: AtomicCell<Option<ShouldRefreshSubscriber<A>>>,
+    _app: PhantomData<A>,
 }
 
 impl<A, WD> AppHandle<A, WD>
@@ -50,21 +46,19 @@ where
     WD: WrappedDispatcher<Model = A::RootModel>,
 {
     pub fn new<S: GlobalSpawner>(
-        builder_fn: impl FnOnce(MvuRuntimeBuilder<A>) -> (MvuRuntime<A>, ShouldRefreshSubscriber<A>),
+        builder_fn: impl FnOnce(MvuRuntimeBuilder<A>) -> MvuRuntime<A>,
     ) -> Self {
-        let (runtime, should_refresh) = builder_fn(MvuRuntimeBuilder::new());
+        let runtime = builder_fn(MvuRuntimeBuilder::new());
         let dispatcher = runtime.dispatcher();
         S::spawn_detached(runtime.run());
         Self {
             dispatcher: WD::__new(dispatcher, crate::__private::Token::new()),
-            should_refresh: AtomicCell::new(Some(should_refresh)),
+            _app: PhantomData,
         }
     }
 
     #[cfg(feature = "frb-compat")]
-    pub fn new_frb(
-        builder_fn: impl FnOnce(MvuRuntimeBuilder<A>) -> (MvuRuntime<A>, ShouldRefreshSubscriber<A>),
-    ) -> Self {
+    pub fn new_frb(builder_fn: impl FnOnce(MvuRuntimeBuilder<A>) -> MvuRuntime<A>) -> Self {
         Self::new::<FrbSpawner>(builder_fn)
     }
 
@@ -81,18 +75,6 @@ where
     A: Application,
     WD: WrappedDispatcher<Model = A::RootModel>,
 {
-    pub fn should_refresh(&self) -> impl Stream<Item = A::RegionId> + 'static {
-        match self.should_refresh.take() {
-            Some(subscriber) => Either::Left(subscriber),
-            None => {
-                tracing::warn!(
-                    "attempted to access should_refresh stream more than once; returning empty stream"
-                );
-                Either::Right(futures::stream::empty())
-            }
-        }
-    }
-
     pub fn dispatcher(&self) -> WD
     where
         WD: Clone,
@@ -107,18 +89,12 @@ where
     WD: WrappedDispatcher<Model = A::RootModel>,
 {
     pub fn updater(&self) -> WD::Updater {
-        let (updater, _) = self
-            .dispatcher
-            .clone()
-            .__split(crate::__token());
+        let (updater, _) = self.dispatcher.clone().__split(crate::__token());
         updater
     }
 
     pub fn getter(&self) -> WD::Getter {
-        let (_, getter) = self
-            .dispatcher
-            .clone()
-            .__split(crate::__token());
+        let (_, getter) = self.dispatcher.clone().__split(crate::__token());
         getter
     }
 }

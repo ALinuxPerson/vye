@@ -1,6 +1,6 @@
 use crate::dispatcher::MvuRuntimeChannelClosedError;
 use crate::maybe::{
-    MaybeSend, MaybeSendStatic, MaybeSendSync, MaybeSendSyncStatic, MaybeStatic,
+    MaybeSend, MaybeSendStatic, MaybeSendSync, MaybeStatic,
 };
 use crate::runtime::{CommandContext, UpdateContext};
 use crate::sync::VMutex;
@@ -12,7 +12,6 @@ use alloc::sync::Arc;
 use async_trait::async_trait;
 use core::any::Any;
 use core::fmt::Debug;
-use core::hash::Hash;
 use core::marker::PhantomData;
 use futures::channel::mpsc;
 use std::collections::VecDeque;
@@ -21,18 +20,15 @@ use thiserror::Error;
 
 pub trait Application: MaybeStatic {
     type RootModel: Model<ForApp = Self>;
-    type RegionId: Debug + Eq + Hash + MaybeSendSync;
 }
 
-pub struct AdHocApp<RootModel, RegionId = ()>(PhantomData<(RootModel, RegionId)>);
+pub struct AdHocApp<RootModel>(PhantomData<RootModel>);
 
-impl<RootModel, RegionId> Application for AdHocApp<RootModel, RegionId>
+impl<RootModel> Application for AdHocApp<RootModel>
 where
-    RootModel: Model<ForApp = AdHocApp<RootModel, RegionId>>,
-    RegionId: Debug + Eq + Hash + MaybeSendSyncStatic,
+    RootModel: Model<ForApp = AdHocApp<RootModel>>,
 {
     type RootModel = RootModel;
-    type RegionId = RegionId;
 }
 
 pub trait ModelGetterMessage: MaybeSendStatic {
