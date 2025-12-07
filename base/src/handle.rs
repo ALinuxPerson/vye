@@ -56,7 +56,7 @@ where
         let dispatcher = runtime.dispatcher();
         S::spawn_detached(runtime.run());
         Self {
-            dispatcher: WD::__new(dispatcher, crate::dispatcher::__private::Token::new()),
+            dispatcher: WD::__new(dispatcher, crate::__private::Token::new()),
             should_refresh: AtomicCell::new(Some(should_refresh)),
         }
     }
@@ -110,7 +110,7 @@ where
         let (updater, _) = self
             .dispatcher
             .clone()
-            .__split(crate::dispatcher::__private::Token::new());
+            .__split(crate::__token());
         updater
     }
 
@@ -118,7 +118,7 @@ where
         let (_, getter) = self
             .dispatcher
             .clone()
-            .__split(crate::dispatcher::__private::Token::new());
+            .__split(crate::__token());
         getter
     }
 }

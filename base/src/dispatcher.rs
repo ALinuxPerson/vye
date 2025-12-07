@@ -1,8 +1,5 @@
 use crate::runtime::UpdateAction;
-use crate::{
-    Application, DynInterceptor, Lens, Model, ModelBase, ModelGetterHandler, ModelGetterMessage,
-    ModelHandler, ModelMessage, UpdateContext,
-};
+use crate::{Application, DynInterceptor, Lens, Model, ModelBase, ModelGetterHandler, ModelGetterMessage, ModelHandler, ModelMessage, UpdateContext, __private};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use futures::SinkExt;
@@ -174,25 +171,6 @@ impl<M: Model> Getter<M> {
 impl<M: Model> Clone for Getter<M> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
-    }
-}
-
-#[doc(hidden)]
-pub mod __private {
-    pub trait Sealed {}
-
-    pub struct Token(());
-
-    impl Token {
-        pub const fn new() -> Self {
-            Self(())
-        }
-    }
-
-    impl Default for Token {
-        fn default() -> Self {
-            Self::new()
-        }
     }
 }
 

@@ -1,12 +1,19 @@
 use crate::dispatcher::MvuRuntimeChannelClosedError;
 use crate::runtime::{CommandContext, UpdateContext};
-use crate::{VRWLockReadGuard, VRWLockWriteGuard, VRwLock};
+use crate::sync::VMutex;
+use crate::{
+    __private, VRWLockReadGuard, VRWLockWriteGuard, VRwLock, lock_mutex, read_vrwlock,
+    write_vrwlock,
+};
 use alloc::sync::Arc;
 use async_trait::async_trait;
 use core::any::Any;
 use core::fmt::Debug;
 use core::hash::Hash;
 use core::marker::PhantomData;
+use futures::channel::mpsc;
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
 
 pub trait Application: 'static {
@@ -33,6 +40,13 @@ pub trait ModelGetterMessage: Send + 'static {
 
 pub trait Model: Send + Sync + 'static {
     type ForApp: Application;
+
+    #[doc(hidden)]
+    fn __accumulate_signals(
+        &self,
+        signals: &mut VecDeque<Arc<dyn FlushSignals>>,
+        _token: __private::Token,
+    );
 }
 
 pub trait ModelWithRegion: Model {
@@ -88,13 +102,7 @@ impl<M> ModelBase<M> {
     }
 
     pub fn read(&self) -> VRWLockReadGuard<'_, M> {
-        #[cfg(feature = "std")]
-        let ret = self.0.read().unwrap();
-
-        #[cfg(not(feature = "std"))]
-        let ret = self.0.read();
-
-        ret
+        read_vrwlock(&self.0)
     }
 
     pub fn reader(&self) -> ModelBaseReader<M> {
@@ -102,13 +110,7 @@ impl<M> ModelBase<M> {
     }
 
     pub fn write(&self) -> VRWLockWriteGuard<'_, M> {
-        #[cfg(feature = "std")]
-        let ret = self.0.write().unwrap();
-
-        #[cfg(not(feature = "std"))]
-        let ret = self.0.write();
-
-        ret
+        write_vrwlock(&self.0)
     }
 }
 
@@ -143,6 +145,15 @@ impl<M: Model> ModelBase<M> {
         Child: Model<ForApp = M::ForApp>,
     {
         lens(&*self.read()).clone()
+    }
+
+    #[doc(hidden)]
+    pub fn __accumulate_signals(
+        &self,
+        signals: &mut VecDeque<Arc<dyn FlushSignals>>,
+        token: __private::Token,
+    ) {
+        self.read().__accumulate_signals(signals, token);
     }
 }
 
@@ -242,6 +253,72 @@ where
         ) {
             let model_reader = ModelBaseReader(model.clone());
             self.interceptor.intercept(model_reader, message);
+        }
+    }
+}
+
+pub struct Signal<T>(Arc<SignalRepr<T>>);
+
+impl<T> Signal<T> {
+    pub fn subscribe(&self) -> mpsc::Receiver<()> {
+        let (tx, rx) = mpsc::channel(1);
+        let mut subscribers = lock_mutex(&self.0.subscribers);
+        subscribers.push(tx);
+        rx
+    }
+
+    pub fn read(&self) -> VRWLockReadGuard<'_, T> {
+        read_vrwlock(&self.0.state)
+    }
+
+    fn write(&mut self) -> VRWLockWriteGuard<'_, T> {
+        write_vrwlock(&self.0.state)
+    }
+
+    pub fn update<R>(&mut self, f: impl FnOnce(&mut T) -> R) -> R {
+        let ret = { f(&mut *self.write()) };
+        self.0.dirty.store(true, Ordering::Release);
+        ret
+    }
+
+    pub fn set(&mut self, value: T) {
+        self.update(|v| *v = value);
+    }
+
+    #[doc(hidden)]
+    pub fn __to_dyn_flush_signals(&self, _: __private::Token) -> Arc<dyn FlushSignals>
+    where
+        T: Send + Sync + 'static,
+    {
+        Arc::clone(&self.0) as _
+    }
+}
+
+impl<T> Clone for Signal<T> {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+struct SignalRepr<T> {
+    state: Arc<VRwLock<T>>,
+    subscribers: VMutex<Vec<mpsc::Sender<()>>>,
+    dirty: AtomicBool,
+}
+
+#[doc(hidden)]
+pub trait FlushSignals: Send {
+    fn __flush(&mut self, _token: __private::Token);
+}
+
+impl<T: Send + Sync> FlushSignals for SignalRepr<T> {
+    fn __flush(&mut self, _: __private::Token) {
+        if self.dirty.swap(false, Ordering::AcqRel) {
+            let mut subscribers = lock_mutex(&self.subscribers);
+            for subscriber in &mut *subscribers {
+                subscriber.try_send(()).ok();
+            }
+            subscribers.retain(|s| !s.is_closed());
         }
     }
 }

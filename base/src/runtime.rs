@@ -1,5 +1,8 @@
 use crate::base::{Application, Command, Model, ModelGetterHandler, ModelGetterMessage};
-use crate::{Dispatcher, DynInterceptor, Interceptor, InterceptorWrapper, ModelBase, ModelBaseReader, ModelHandler, ModelMessage, ModelWithRegion, Updater, VRWLockReadGuard};
+use crate::{
+    Dispatcher, DynInterceptor, FlushSignals, Interceptor, InterceptorWrapper, ModelBase,
+    ModelBaseReader, ModelHandler, ModelMessage, ModelWithRegion, Updater, VRWLockReadGuard,
+};
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use core::any::type_name;
