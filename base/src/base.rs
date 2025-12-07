@@ -277,7 +277,7 @@ struct SignalRepr<T> {
 }
 
 #[doc(hidden)]
-pub trait FlushSignals: MaybeSend {
+pub trait FlushSignals: MaybeSendSync {
     fn __flush(&self, _token: __private::Token);
 }
 
