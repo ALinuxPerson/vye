@@ -7,6 +7,7 @@ use crate::runtime::{CommandContext, UpdateContext};
 use async_trait::async_trait;
 use core::fmt::Debug;
 use core::marker::PhantomData;
+use futures::StreamExt;
 use futures::channel::mpsc;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -206,32 +207,38 @@ where
     }
 }
 
+pub enum SignalStatus {
+    Changed,
+    Destroyed,
+}
+
 pub struct Signal<T>(Shared<SignalRepr<T>>);
 
 impl<T> Signal<T> {
-    pub fn subscribe(&self) -> mpsc::Receiver<()> {
-        let (tx, rx) = mpsc::channel(1);
+    pub fn new(value: T) -> Self {
+        Self(Shared::new(SignalRepr {
+            data: Shared::new(MaybeRwLock::new(value)),
+            subscribers: MaybeMutex::new(Vec::new()),
+            dirty: AtomicBool::new(false),
+        }))
+    }
+
+    pub fn subscribe(&self) -> SignalSubscriber<T> {
+        let (status_tx, status_rx) = mpsc::channel(1);
         let mut subscribers = self.0.subscribers.lock();
-        subscribers.push(tx);
-        rx
+        subscribers.push(status_tx);
+        SignalSubscriber {
+            reader: self.reader(),
+            status_rx,
+        }
     }
 
-    pub fn read(&self) -> MaybeRwLockReadGuard<'_, T> {
-        self.0.state.read()
+    pub fn reader(&self) -> SignalReader<T> {
+        SignalReader(self.clone())
     }
 
-    fn write(&mut self) -> MaybeRwLockWriteGuard<'_, T> {
-        self.0.state.write()
-    }
-
-    pub fn update<R>(&mut self, f: impl FnOnce(&mut T) -> R) -> R {
-        let ret = { f(&mut *self.write()) };
-        self.0.dirty.store(true, Ordering::Release);
-        ret
-    }
-
-    pub fn set(&mut self, value: T) {
-        self.update(|v| *v = value);
+    pub fn writer(&self) -> SignalWriter<T> {
+        SignalWriter(self.clone())
     }
 
     #[doc(hidden)]
@@ -249,25 +256,100 @@ impl<T> Clone for Signal<T> {
     }
 }
 
+impl<T: Default> Default for Signal<T> {
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}
+
+impl<T> Drop for Signal<T> {
+    fn drop(&mut self) {
+        for subscriber in &mut *self.0.subscribers.lock() {
+            subscriber.try_send(SignalStatus::Destroyed).ok();
+        }
+    }
+}
+
 struct SignalRepr<T> {
-    state: Shared<MaybeRwLock<T>>,
-    subscribers: MaybeMutex<Vec<mpsc::Sender<()>>>,
+    data: Shared<MaybeRwLock<T>>,
+    subscribers: MaybeMutex<Vec<mpsc::Sender<SignalStatus>>>,
     dirty: AtomicBool,
 }
 
 #[doc(hidden)]
 pub trait FlushSignals: MaybeSend {
-    fn __flush(&mut self, _token: __private::Token);
+    fn __flush(&self, _token: __private::Token);
 }
 
 impl<T: MaybeSendSync> FlushSignals for SignalRepr<T> {
-    fn __flush(&mut self, _: __private::Token) {
+    fn __flush(&self, _: __private::Token) {
         if self.dirty.swap(false, Ordering::AcqRel) {
             let mut subscribers = self.subscribers.lock();
             for subscriber in &mut *subscribers {
-                subscriber.try_send(()).ok();
+                subscriber.try_send(SignalStatus::Changed).ok();
             }
             subscribers.retain(|s| !s.is_closed());
         }
+    }
+}
+
+impl<T: MaybeSendSync> FlushSignals for Vec<Signal<T>> {
+    fn __flush(&self, _: __private::Token) {
+        for signal in self {
+            signal.0.__flush(crate::__token());
+        }
+    }
+}
+
+pub struct SignalSubscriber<T> {
+    reader: SignalReader<T>,
+    status_rx: mpsc::Receiver<SignalStatus>,
+}
+
+impl<T> SignalSubscriber<T> {
+    pub fn read(&self) -> MaybeRwLockReadGuard<'_, T> {
+        self.reader.read()
+    }
+
+    pub async fn recv_status(&mut self) -> Option<SignalStatus> {
+        self.status_rx.next().await
+    }
+}
+
+pub struct SignalReader<T>(Signal<T>);
+
+impl<T> SignalReader<T> {
+    pub fn read(&self) -> MaybeRwLockReadGuard<'_, T> {
+        self.0.0.data.read()
+    }
+}
+
+impl<T> Clone for SignalReader<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+pub struct SignalWriter<T>(Signal<T>);
+
+impl<T> SignalWriter<T> {
+    pub fn write(&self) -> MaybeRwLockWriteGuard<'_, T> {
+        self.0.0.data.write()
+    }
+
+    pub fn update<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
+        let ret = f(&mut self.write());
+        self.0.0.dirty.store(true, Ordering::Release);
+        ret
+    }
+
+    pub fn set(&self, value: T) {
+        self.update(|data| *data = value);
+    }
+}
+
+impl<T> Clone for SignalWriter<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
     }
 }

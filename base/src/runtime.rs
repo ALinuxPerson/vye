@@ -1,5 +1,5 @@
 use crate::base::{Application, Command, Model, ModelGetterHandler, ModelGetterMessage};
-use crate::{Interceptor, ModelBase, ModelBaseReader};
+use crate::{FlushSignals, Interceptor, ModelBase, ModelBaseReader};
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use core::any::type_name;
@@ -7,7 +7,7 @@ use core::ops::ControlFlow;
 use futures::StreamExt;
 use futures::channel::mpsc;
 use crate::{Getter, Updater};
-use crate::maybe::{MaybeRwLockReadGuard, MaybeSendSync};
+use crate::maybe::{MaybeRwLockReadGuard, MaybeSendSync, Shared};
 
 const DEFAULT_CHANNEL_BUFFER_SIZE: usize = 64;
 
@@ -80,6 +80,7 @@ pub struct MvuRuntime<A: Application> {
     world: World,
     interceptors: Vec<Box<dyn Interceptor<A>>>,
     queue: CommandQueue<A>,
+    signals: VecDeque<Shared<dyn FlushSignals>>,
     updater: Updater<A::RootModel>,
     message_rx: mpsc::Receiver<RootMessage<A>>,
 }
@@ -129,6 +130,7 @@ impl<A: Application> MvuRuntime<A> {
             queue: &mut self.queue,
         };
         self.model.write().update(message, &mut update_ctx);
+        self.model.__accumulate_signals(&mut self.signals, crate::__token());
         let mut command_ctx = CommandContext {
             model: self.model.reader(),
             world: &mut self.world,
@@ -137,6 +139,9 @@ impl<A: Application> MvuRuntime<A> {
         while let Some(mut command) = self.queue.pop() {
             tracing::debug!(?command, "applying command");
             command.apply(&mut command_ctx).await;
+        }
+        while let Some(signal) = self.signals.pop_front() {
+            signal.__flush(crate::__token());
         }
     }
 }
@@ -256,6 +261,7 @@ impl<A: Application> MvuRuntimeBuilder<A> {
             world: self.world,
             interceptors: self.interceptors,
             queue: CommandQueue::default(),
+            signals: VecDeque::new(),
             updater: Updater::new(message_tx),
             message_rx,
         }
