@@ -73,3 +73,26 @@ macro_rules! wrap_app_handle_for_frb {
         }
     };
 }
+
+#[macro_export]
+macro_rules! join_signals {
+    ($Spawner:ty, $($signal:ident),+ $(,)?) => {{
+        use $crate::__macros::futures::{select, FutureExt};
+        $(let $signal = $signal;)+
+        let initial = ($($signal.reader().read().clone()),+);
+        let output = $crate::Signal::new(initial);
+        let writer = output.writer();
+        $(let mut $signal = $signal.subscribe();)+
+        <$Spawner as $crate::GlobalSpawner>::spawn_detached(async move {
+            loop {
+                select! {
+                    $(_ = $signal.recv_status().fuse() => {}),+
+                    complete => break,
+                }
+                let new_values = ($($signal.read().clone()),+);
+                writer.set(new_values);
+            }
+        });
+        output
+    }};
+}
