@@ -75,7 +75,7 @@ impl<'rt, A: Application> CommandContext<'rt, A> {
 
 type RootMessage<A> = <<A as Application>::RootModel as Model>::Message;
 
-pub struct MvuRuntime<A: Application> {
+pub struct Host<A: Application> {
     model: ModelBase<A::RootModel>,
     world: World,
     interceptors: Vec<Box<dyn Interceptor<A>>>,
@@ -85,9 +85,9 @@ pub struct MvuRuntime<A: Application> {
     message_rx: mpsc::Receiver<RootMessage<A>>,
 }
 
-impl<A: Application> MvuRuntime<A> {
-    pub fn builder() -> MvuRuntimeBuilder<A> {
-        MvuRuntimeBuilder::new()
+impl<A: Application> Host<A> {
+    pub fn builder() -> HostBuilder<A> {
+        HostBuilder::new()
     }
 
     pub fn new(model: A::RootModel) -> Self {
@@ -98,16 +98,16 @@ impl<A: Application> MvuRuntime<A> {
     where
         A::RootModel: Default,
     {
-        MvuRuntimeBuilder::defaults().build()
+        HostBuilder::defaults().build()
     }
 }
 
-impl<A: Application> MvuRuntime<A> {
+impl<A: Application> Host<A> {
     pub async fn run(mut self) {
-        tracing::debug!("mvu runtime has started");
+        tracing::debug!("host has started");
         loop {
             if let ControlFlow::Break(()) = self.run_once().await {
-                tracing::debug!("mvu runtime is stopping");
+                tracing::debug!("host is stopping");
                 break;
             }
         }
@@ -147,7 +147,7 @@ impl<A: Application> MvuRuntime<A> {
     }
 }
 
-impl<A: Application> MvuRuntime<A> {
+impl<A: Application> Host<A> {
     pub fn updater(&self) -> Updater<A::RootModel> {
         self.updater.clone()
     }
@@ -192,14 +192,14 @@ impl World {
     }
 }
 
-pub struct MvuRuntimeBuilder<A: Application> {
+pub struct HostBuilder<A: Application> {
     model: Option<A::RootModel>,
     world: World,
     interceptors: Vec<Box<dyn Interceptor<A>>>,
     buffer_size: usize,
 }
 
-impl<A: Application> MvuRuntimeBuilder<A> {
+impl<A: Application> HostBuilder<A> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -251,13 +251,13 @@ impl<A: Application> MvuRuntimeBuilder<A> {
         self.model(Default::default())
     }
 
-    pub fn build(self) -> MvuRuntime<A> {
+    pub fn build(self) -> Host<A> {
         let model = self.model.expect("RootModel was not initialized");
         let model = ModelBase::new(model);
 
         let (message_tx, message_rx) = mpsc::channel(self.buffer_size);
 
-        MvuRuntime {
+        Host {
             model: model.clone(),
             world: self.world,
             interceptors: self.interceptors,
@@ -269,7 +269,7 @@ impl<A: Application> MvuRuntimeBuilder<A> {
     }
 }
 
-impl<A: Application> Default for MvuRuntimeBuilder<A> {
+impl<A: Application> Default for HostBuilder<A> {
     fn default() -> Self {
         Self {
             model: None,

@@ -37,7 +37,7 @@ macro_rules! wrap_app_handle_for_frb {
         impl $AppHandleWrapper {
             $(#[$($new_meta)*])*
             $new_vis async fn new($($bfn_arg: $bfn_arg_ty),*) -> Self {
-                let builder_fn = |$builder: $crate::MvuRuntimeBuilder<$Application>, $($bfn_arg: $bfn_arg_ty),*| $builder_fn;
+                let builder_fn = |$builder: $crate::HostBuilder<$Application>, $($bfn_arg: $bfn_arg_ty),*| $builder_fn;
                 Self($crate::handle::AppHandle::new::<$crate::handle::FrbSpawner>(|$builder| builder_fn($builder, $($bfn_arg),*)))
             }
 

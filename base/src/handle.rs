@@ -33,7 +33,7 @@ pub use spawner::FrbSpawner;
 #[cfg(feature = "tokio")]
 pub use spawner::TokioSpawner;
 
-use crate::{Application, MvuRuntime, MvuRuntimeBuilder};
+use crate::{Application, Host, HostBuilder};
 use crate::{WrappedGetter, WrappedUpdater};
 
 pub struct AppHandle<A: Application, WU, WG> {
@@ -49,12 +49,12 @@ where
     WG: WrappedGetter<Model = A::RootModel>,
 {
     pub fn new<S: GlobalSpawner>(
-        builder_fn: impl FnOnce(MvuRuntimeBuilder<A>) -> MvuRuntime<A>,
+        builder_fn: impl FnOnce(HostBuilder<A>) -> Host<A>,
     ) -> Self {
-        let runtime = builder_fn(MvuRuntimeBuilder::new());
-        let updater = runtime.updater();
-        let getter = runtime.getter();
-        S::spawn_detached(runtime.run());
+        let host = builder_fn(HostBuilder::new());
+        let updater = host.updater();
+        let getter = host.getter();
+        S::spawn_detached(host.run());
         Self {
             updater: WU::__new(updater, crate::__token()),
             getter: WG::__new(getter, crate::__token()),
@@ -63,13 +63,13 @@ where
     }
 
     #[cfg(feature = "frb-compat")]
-    pub fn new_frb(builder_fn: impl FnOnce(MvuRuntimeBuilder<A>) -> MvuRuntime<A>) -> Self {
+    pub fn new_frb(builder_fn: impl FnOnce(HostBuilder<A>) -> Host<A>) -> Self {
         Self::new::<FrbSpawner>(builder_fn)
     }
 
     #[cfg(feature = "tokio")]
     pub fn new_tokio(
-        builder_fn: impl FnOnce(MvuRuntimeBuilder<A>) -> (MvuRuntime<A>, ShouldRefreshSubscriber<A>),
+        builder_fn: impl FnOnce(HostBuilder<A>) -> (Host<A>, ShouldRefreshSubscriber<A>),
     ) -> Self {
         Self::new::<TokioSpawner>(builder_fn)
     }

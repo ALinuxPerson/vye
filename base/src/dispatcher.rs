@@ -1,7 +1,7 @@
 use crate::maybe::Shared;
 use crate::{
     __private, Application, Model, ModelBase, ModelGetterHandler, ModelGetterMessage,
-    MvuRuntimeChannelClosedError, Signal,
+    HostChannelClosed, Signal,
 };
 use futures::SinkExt;
 use futures::channel::mpsc;
@@ -39,17 +39,17 @@ impl<M: Model> Updater<M> {
     pub async fn try_send(
         &mut self,
         message: M::Message,
-    ) -> Result<(), MvuRuntimeChannelClosedError> {
+    ) -> Result<(), HostChannelClosed> {
         self.tx
             .send((self.mapper)(message))
             .await
-            .map_err(|_| MvuRuntimeChannelClosedError)
+            .map_err(|_| HostChannelClosed)
     }
 
     pub async fn send(&mut self, message: M::Message) {
         self.try_send(message)
             .await
-            .expect("the channel to the mvu runtime is closed")
+            .expect("the channel to the host is closed")
     }
 
     pub fn zoom<Child>(self, lens: fn(<Child as Model>::Message) -> M::Message) -> Updater<Child>

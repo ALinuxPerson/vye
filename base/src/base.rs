@@ -3,7 +3,7 @@ use crate::maybe::{
     MaybeMutex, MaybeRwLock, MaybeRwLockReadGuard, MaybeRwLockWriteGuard, MaybeSend,
     MaybeSendStatic, MaybeSendSync, Shared,
 };
-use crate::runtime::{CommandContext, UpdateContext};
+use crate::host::{CommandContext, UpdateContext};
 use async_trait::async_trait;
 use core::fmt::Debug;
 use core::marker::PhantomData;
@@ -58,16 +58,16 @@ pub trait Command: Debug + MaybeSendSync {
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("the channel to the mvu runtime is closed")]
-    MvuRuntimeChannelClosed,
+    #[error("the channel to the host is closed")]
+    HostChannelClosed,
 
     #[error("the channel to the model getter is closed")]
     ModelGetterChannelClosed,
 }
 
-impl From<MvuRuntimeChannelClosedError> for Error {
-    fn from(_: MvuRuntimeChannelClosedError) -> Self {
-        Self::MvuRuntimeChannelClosed
+impl From<HostChannelClosed> for Error {
+    fn from(_: HostChannelClosed) -> Self {
+        Self::HostChannelClosed
     }
 }
 
@@ -78,9 +78,9 @@ impl From<ModelGetterChannelClosedError> for Error {
 }
 
 #[derive(Error, Debug)]
-#[error("the channel to the mvu runtime is closed")]
+#[error("the channel to the host is closed")]
 #[non_exhaustive]
-pub struct MvuRuntimeChannelClosedError;
+pub struct HostChannelClosed;
 
 #[derive(Error, Debug)]
 #[non_exhaustive]
