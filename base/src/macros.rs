@@ -96,3 +96,13 @@ macro_rules! join_signals {
         output
     }};
 }
+
+macro_rules! maybe_async_trait {
+    ($($item:item)*) => {
+        $(
+        #[cfg_attr(feature = "thread-safe", ::async_trait::async_trait)]
+        #[cfg_attr(not(feature = "thread-safe"), ::async_trait::async_trait(?Send))]
+        $item
+        )*
+    };
+}

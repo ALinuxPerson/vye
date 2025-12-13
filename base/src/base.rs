@@ -4,7 +4,6 @@ use crate::maybe::{
     MaybeSendStatic, MaybeSendSync, Shared,
 };
 use crate::host::{CommandContext, UpdateContext};
-use async_trait::async_trait;
 use core::fmt::Debug;
 use core::marker::PhantomData;
 use futures::StreamExt;
@@ -49,11 +48,26 @@ pub trait ModelGetterHandler<M: ModelGetterMessage>: Model {
     fn getter(&self) -> Signal<M::Data>;
 }
 
-#[async_trait]
-pub trait Command: Debug + MaybeSendSync {
-    type ForApp: Application;
+maybe_async_trait! {
+    pub trait Command: Debug + MaybeSendSync {
+        type ForApp: Application;
 
-    async fn apply(&mut self, ctx: &mut CommandContext<'_, Self::ForApp>);
+        async fn apply(&mut self, ctx: &mut CommandContext<'_, Self::ForApp>);
+    }
+
+    impl<C> Command for Option<C>
+    where
+        C: Command,
+        Option<C>: MaybeSendSync,
+    {
+        type ForApp = C::ForApp;
+
+        async fn apply(&mut self, ctx: &mut CommandContext<'_, Self::ForApp>) {
+            if let Some(this) = self {
+                this.apply(ctx).await
+            }
+        }
+    }
 }
 
 #[derive(Error, Debug)]
