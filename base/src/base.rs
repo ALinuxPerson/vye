@@ -1,19 +1,19 @@
 use crate::__private;
+use crate::host::UpdateContext;
 use crate::maybe::{
-    MaybeMutex, MaybeRwLock, MaybeRwLockReadGuard, MaybeRwLockWriteGuard, MaybeSend,
-    MaybeSendStatic, MaybeSendSync, Shared,
+    MaybeMutex, MaybeRwLock, MaybeRwLockReadGuard, MaybeRwLockWriteGuard,
+    MaybeSend, MaybeSendStatic, MaybeSendSync, Shared,
 };
-use crate::host::{CommandContext, UpdateContext};
-use core::fmt::Debug;
+use core::fmt::{Debug};
 use core::marker::PhantomData;
-use futures::StreamExt;
 use futures::channel::mpsc;
+use futures::StreamExt;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
 
-// must be `'static` for interceptors
-pub trait Application: 'static {
+// must be `'static` for interceptors, `MaybeSendSync` for commands
+pub trait Application: MaybeSendSync + 'static {
     type RootModel: Model<ForApp = Self>;
 }
 
@@ -46,28 +46,6 @@ pub trait Model: MaybeSendSync + 'static {
 
 pub trait ModelGetterHandler<M: ModelGetterMessage>: Model {
     fn getter(&self) -> Signal<M::Data>;
-}
-
-maybe_async_trait! {
-    pub trait Command: Debug + MaybeSendSync {
-        type ForApp: Application;
-
-        async fn apply(&mut self, ctx: &mut CommandContext<'_, Self::ForApp>);
-    }
-
-    impl<C> Command for Option<C>
-    where
-        C: Command,
-        Option<C>: MaybeSendSync,
-    {
-        type ForApp = C::ForApp;
-
-        async fn apply(&mut self, ctx: &mut CommandContext<'_, Self::ForApp>) {
-            if let Some(this) = self {
-                this.apply(ctx).await
-            }
-        }
-    }
 }
 
 #[derive(Error, Debug)]

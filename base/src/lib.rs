@@ -1,8 +1,12 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 extern crate alloc;
+extern crate core;
 
 #[macro_use]
 pub mod macros;
+
+#[macro_use]
+mod maybe;
 
 #[doc(hidden)]
 pub mod __macros {
@@ -45,8 +49,9 @@ pub mod __private {
 
 pub mod base;
 pub mod dispatcher;
-mod maybe;
+
 pub mod host;
+pub mod command;
 
 #[cfg(feature = "thread-safe")]
 pub mod handle;
@@ -54,6 +59,7 @@ pub mod handle;
 pub use base::*;
 pub use dispatcher::*;
 pub use host::*;
+pub use command::*;
 
 #[cfg(feature = "thread-safe")]
 pub use handle::*;

@@ -1,4 +1,4 @@
-use crate::base::{Application, Command, Model, ModelGetterHandler, ModelGetterMessage};
+use crate::{Application, Command, Model, ModelGetterHandler, ModelGetterMessage};
 use crate::maybe::{MaybeRwLockReadGuard, MaybeSendSync, Shared};
 use crate::{FlushSignals, Interceptor, ModelBase, ModelBaseReader, Signal};
 use crate::{Getter, Updater};

@@ -8,6 +8,7 @@ mod impls {
     impl<T: Sync> MaybeSync for T {}
     impl<T: 'static> MaybeStatic for T {}
     pub type Shared<T> = alloc::sync::Arc<T>;
+    pub type MaybeLocalBoxFuture<'a, T> = futures::future::BoxFuture<'a, T>;
 }
 
 #[cfg(not(feature = "thread-safe"))]
@@ -20,9 +21,10 @@ mod impls {
     impl<T> MaybeSync for T {}
     impl<T> MaybeStatic for T {}
     pub type Shared<T> = alloc::rc::Rc<T>;
+    pub type MaybeLocalBoxFuture<'a, T> = futures::future::LocalBoxFuture<'a, T>;
 }
 
-pub use impls::{MaybeSend, MaybeStatic, MaybeSync, Shared};
+pub use impls::{MaybeSend, MaybeStatic, MaybeSync, Shared, MaybeLocalBoxFuture};
 
 #[cfg(feature = "thread-safe")]
 mod sync {
@@ -149,8 +151,22 @@ pub use sync::{
     MaybeMutex, MaybeMutexGuard, MaybeRwLock, MaybeRwLockReadGuard, MaybeRwLockWriteGuard,
 };
 
-pub trait MaybeSendSync: MaybeSend + MaybeSync + MaybeStatic {}
-impl<T: MaybeSend + MaybeSync + MaybeStatic> MaybeSendSync for T {}
+pub trait MaybeSendSync: MaybeSend + MaybeSync {}
+impl<T: MaybeSend + MaybeSync> MaybeSendSync for T {}
 
 pub trait MaybeSendStatic: MaybeSend + MaybeStatic {}
 impl<T: MaybeSend + MaybeStatic> MaybeSendStatic for T {}
+
+#[cfg(feature = "thread-safe")]
+macro_rules! dyn_Maybe {
+    (Send $($traits:tt)+) => { dyn $($traits)+ + ::core::marker::Send };
+    (Sync $($traits:tt)+) => { dyn $($traits)+ + ::core::marker::Sync };
+    (SendSync $($traits:tt)+) => { dyn $($traits)+ + ::core::marker::Send + ::core::marker::Sync };
+}
+
+#[cfg(not(feature = "thread-safe"))]
+macro_rules! dyn_Maybe {
+    (Send $($traits:tt)+) => { dyn $($traits)+ };
+    (Sync $($traits:tt)+) => { dyn $($traits)+ };
+    (SendSync $($traits:tt)+) => { dyn $($traits)+ };
+}
